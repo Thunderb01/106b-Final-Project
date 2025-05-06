@@ -1,0 +1,4 @@
+---
+# Configuration file for swarm parameters
+comm_radius: 5.0
+publish_rate: 5.0

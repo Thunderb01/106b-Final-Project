@@ -1,13 +1,13 @@
 """
-Setup of Project 2 python codebase
+Setup of Swarm Explorer python codebase
 """
 from setuptools import setup
 
-setup(name='proj2_pkg',
+setup(name='swarm_explorer',
       version='0.1.0',
-      description='EE 106B Project 2 code',
+      description='Swarm Explorer Final Project for EECS106B',
       package_dir = {'': 'src'},
-      packages=['proj2_pkg'],
+      packages=['swarm_explorer'],
       install_requires=[],
       test_suite='test'
      )

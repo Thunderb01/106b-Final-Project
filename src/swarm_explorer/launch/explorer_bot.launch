@@ -1,10 +1,9 @@
 <launch>
   <arg name="robot_id" default="1"/>
-  <rosparam file="$(find swarm_explorer)/config/swarm_params.yaml" command="load"/>
   <group ns="robot_$(arg robot_id)">
-    <node pkg="swarm_explorer" type="explorer_bot.py" name="explorer_bot" output="screen">
+    <node pkg="swarm_explorer" type="explorer_bot.py" 
+        name="explorer_bot" output="screen">
       <param name="robot_id" value="$(arg robot_id)"/>
-      <param name="comm_radius" value="$(arg comm_radius)"/>
     </node>
   </group>
 </launch>

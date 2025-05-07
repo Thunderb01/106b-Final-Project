@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(proj2_pkg) # TODO: Update this for our project
+project(swarm_explorer) # TODO: Update this for our project
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
@@ -57,6 +57,7 @@ add_message_files(
   FILES
   BicycleStateMsg.msg
   BicycleCommandMsg.msg
+  ExplorerStateMsg.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -167,10 +168,11 @@ include_directories(
 
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
-# install(PROGRAMS
-#   scripts/my_python_script
-#   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
+install(PROGRAMS
+  scripts/explorer_bot.py
+  scripts/swarm_relay.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
 ## Mark executables and/or libraries for installation
 # install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_node
@@ -187,11 +189,11 @@ include_directories(
 # )
 
 ## Mark other files for installation (e.g. launch and bag files, etc.)
-# install(FILES
-#   # myfile1
-#   # myfile2
-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-# )
+install(DIRECTORY
+  launch/
+  config/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
 
 #############
 ## Testing ##

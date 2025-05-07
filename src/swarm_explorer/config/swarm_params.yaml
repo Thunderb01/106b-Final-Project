@@ -2,3 +2,8 @@
 # Configuration file for swarm parameters
 comm_radius: 5.0
 publish_rate: 5.0
+# define initial poses for each robot
+initial_poses:
+  - { x: 0.0, y: 0.0, theta: 0.0 } # robot 1
+  - { x: 1.0, y: 1.0, theta: 0.0 } # robot 2
+  - { x: 2.0, y: 2.0, theta: 0.0 } # robot 3

@@ -1,14 +1,17 @@
 <launch>
   <arg name="num_bots" default="3"/>
-  <include file="$(find swarm_explorer)/launch/swarm_relay.launch"/>
-  <!-- loop via xacro or manually include explorer_bot.launch for each ID -->
-  <include file="$(find swarm_explorer)/launch/explorer_bot.launch">
-    <arg name="robot_id" value="1"/>
-  </include>
-  <include file="$(find swarm_explorer)/launch/explorer_bot.launch">
-    <arg name="robot_id" value="2"/>
-  </include>
-  <include file="$(find swarm_explorer)/launch/explorer_bot.launch">
-    <arg name="robot_id" value="3"/>
-  </include>
+
+  <!-- 1) load the params in the YAML once -->
+  <rosparam file="$(find swarm_explorer)/config/swarm_params.yaml" command="load"/>
+
+  <!-- 2) expand the template into a tmp file -->
+  <node pkg="xacro" type="xacro" name="expand_explorers" args="
+    --inorder
+    -o $(find swarm_explorer)/tmp/generated.launch
+    $(find swarm_explorer)/launch/explorers_template.xacro
+    num_bots:=$(arg num_bots)
+  "/>
+  <!-- 3) include the generated launch -->
+  <include file="$(find swarm_explorer)/tmp/generated.launch"/>
 </launch>
+

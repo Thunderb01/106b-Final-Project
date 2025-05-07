@@ -2,6 +2,8 @@
 # Configuration file for swarm parameters
 comm_radius: 5.0
 publish_rate: 5.0
+max_neighbor_age: 0.5 # seconds
+map_type: "occupancy_grid" # options: occupancy_grid, SLAM
 # define initial poses for each robot
 initial_poses:
   - { x: 0.0, y: 0.0, theta: 0.0 } # robot 1

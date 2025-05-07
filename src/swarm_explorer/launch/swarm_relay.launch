@@ -1,0 +1,4 @@
+<launch>
+  <rosparam file="$(find swarm_explorer)/config/swarm_params.yaml" command="load"/>
+  <node pkg="swarm_explorer" type="swarm_relay.py" name="swarm_relay" output="screen"/>
+</launch>

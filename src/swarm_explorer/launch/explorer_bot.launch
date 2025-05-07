@@ -1,0 +1,9 @@
+<launch>
+  <arg name="robot_id" default="1"/>
+  <group ns="robot_$(arg robot_id)">
+    <node pkg="swarm_explorer" type="explorer_bot.py" 
+        name="explorer_bot" output="screen">
+      <param name="robot_id" value="$(arg robot_id)"/>
+    </node>
+  </group>
+</launch>

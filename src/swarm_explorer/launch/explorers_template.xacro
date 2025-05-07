@@ -1,0 +1,11 @@
+<launch xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:property name="N" value="${num_bots}"/>
+
+  <xacro:for each="i" count="${N}">
+    <group ns="robot_${xacro:index()+1}">
+      <include file="$(find swarm_explorer)/launch/explorer_bot.launch">
+        <arg name="robot_id" value="${i+1}"/>
+      </include>
+    </group>
+  </xacro:for>
+</launch>

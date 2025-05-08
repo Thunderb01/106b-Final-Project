@@ -12,6 +12,13 @@ except ImportError:
     pass
 
 
+def wrap_angle(angle: float) -> float:
+    """
+    Wrap an angle to the range [-pi, pi].
+    """
+    return (angle + np.pi) % (2 * np.pi) - np.pi
+
+
 def calc_euclidean_distance(p1: Odometry, p2: Odometry):
     """
     Calculate the Euclidean distance between two points.

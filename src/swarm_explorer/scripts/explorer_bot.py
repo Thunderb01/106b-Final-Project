@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 import rospy
 import numpy as np
+import matplotlib.pyplot as plt
 import tf2_ros
 from geometry_msgs.msg import TransformStamped, Twist
 import tf_conversions
 
+from mapping.src.occupancy_grid_2d import OccupancyGrid2d
 from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import Odometry
 from final_proj.msg import ExplorerState, SLAMData
@@ -23,6 +25,8 @@ class ExplorerBot:
         Initializes the ExplorerBot with info from the parameter server.
         """
         rospy.init_node("explorer_bot")
+        # Initialize parameters from parameter server
+        self.initialize_params()
 
         # topics
         if self.map_type not in ["occupancy", "slam"]:
@@ -33,10 +37,10 @@ class ExplorerBot:
         self.map_pub_topic: str = f"/robot_{self.bot_id}/incoming/map"
         self.state_topic: str = "/swarm/robot_states"
         self.state_pub_topic: str = f"/robot_{self.bot_id}/incoming/state"
-        self.cmd_topic: str = f"/robot_{self.bot_id}/cmd_vel"
+        # self.cmd_topic: str = f"/robot_{self.bot_id}/cmd_vel"
 
         # storage for callbacks
-        self.latest_map: OccupancyGrid | SLAMData = None 
+        self.latest_map: OccupancyGrid2d = OccupancyGrid2d()
         self.neighbor_states: Dict[int, Odometry] = {}  # robot_id → Odometry
 
         # publish static map→odom
@@ -45,11 +49,11 @@ class ExplorerBot:
         t.header.stamp = rospy.Time.now()
         t.header.frame_id = "map"
         t.child_frame_id = f"robot_{self.bot_id}/odom"
-        t.transform.translation.x = self.curr_pose["x"]
-        t.transform.translation.y = self.curr_pose["y"]
+        t.transform.translation.x = self.curr_state["x"]
+        t.transform.translation.y = self.curr_state["y"]
         t.transform.translation.z = 0
         quat = tf_conversions.transformations.quaternion_from_euler(
-            0, 0, self.curr_pose["theta"]  # roll, pitch, yaw
+            0, 0, self.curr_state["theta"]  # roll, pitch, yaw
         )
         t.transform.rotation.x = quat[0]
         t.transform.rotation.y = quat[1]
@@ -58,7 +62,7 @@ class ExplorerBot:
         br.sendTransform(t)
 
         # publishers and subscribers
-        self.pub_cmd = rospy.Publisher(self.cmd_topic, Twist, queue_size=1)
+        # self.pub_cmd = rospy.Publisher(self.cmd_topic, Twist, queue_size=1)
         self.pub_state = rospy.Publisher(
             self.state_pub_topic, ExplorerState, queue_size=1
         )
@@ -84,10 +88,18 @@ class ExplorerBot:
         
         self.controller = TurtlebotController(
             tb_id=self.bot_id,
+            map_obj=self.latest_map,
+            neighbor_states=self.neighbor_states,
             cohesion_radius=self.cohesion_radius,
             separation_radius=self.separation_radius,
             alignment_radius=self.alignment_radius,
             collision_radius=self.collision_radius,
+            cohesion_weight=self.cohesion_weight,
+            separation_weight=self.separation_weight,
+            alignment_weight=self.alignment_weight,
+            obstacle_weight=self.obstacle_weight,
+            wall_weight=self.wall_weight,
+            frontier_weight=self.frontier_weight,
             Kp=Kp,
             Kd=Kd,
             Ki=Ki,
@@ -103,8 +115,9 @@ class ExplorerBot:
         poses: List[Dict[str, float]] = rospy.get_param(
             "/initial_poses"
         )  # list of dicts
-        self.curr_pose: Dict[str, float] = poses[self.bot_id - 1]
-        self.curr_odom: Odometry = self._pose_to_odom(self.curr_pose)  # type: Odometry
+        self.curr_state: Dict[stro, float] = poses[self.bot_id - 1]
+        self.curr_vel: Dict[str, float] = {"x_dot": 0, "y_dot": 0}
+        self.curr_odom: Odometry = self._pose_to_odom(self.curr_state)  # type: Odometry
         # Communication parameters
         self.comm_radius: float = rospy.get_param("~comm_radius", 5.0)  # meters
         self.max_neighbor_age: float = rospy.get_param(
@@ -131,8 +144,8 @@ class ExplorerBot:
         This function will be called whenever a new message is received on the map topic.
         """
         # You can add your processing logic here
-        neighbor_map = msg  # Assuming msg.data is the map data you want to process
-        self.latest_map = self.frontier_updater.update(self.latest_map, neighbor_map)
+        neighbor_map = OccupancyGrid2d(msg)
+        self.latest_map = OccupancyGrid2d.merge_maps(self.latest_map, neighbor_map)
 
     def _state_callback(self, msg):
         """
@@ -175,14 +188,14 @@ class ExplorerBot:
                 msg.pose.pose.orientation.w,
             ]
         )[2]
-        self.curr_pose = {"x": x, "y": y, "theta": theta}
+        self.curr_state = {"x": x, "y": y, "theta": theta}
         self.curr_odom = msg
 
     def _get_current_pose(self):
         """Return the current pose of the robot."""
         # return pose if available
-        if self.curr_pose is not None:
-            return self.curr_pose
+        if self.curr_state is not None:
+            return self.curr_state
 
         # or fall back to TF lookup:
         try:
@@ -204,13 +217,26 @@ class ExplorerBot:
 
     def run(self):
         rate = rospy.Rate(10)  # 10 Hz control loop
+        # Plotting variables
+        actual_positions = []
+        actual_velocities = []
+        target_positions = []
+        target_velocities = []
+        times = []
+        # Main loop
         while not rospy.is_shutdown() or not self.frontier_updater.map_fully_known():
             # Process the latest map and neighbor states
             if self.latest_map is None:
                 # Process the map data
                 rate.sleep()
                 continue
-            # TODO: frontier_updater call
+            # Update frontiers based on the latest map
+            self.frontier_updater.update_frontiers()
+            # TODO: what message type is our map?
+            self.pub_map.publish(self.latest_map)
+            best_frontier = self.frontier_updater.get_best_frontier()
+            if best_frontier is None:
+                continue
 
             # Call to the controller
             true_neighbor_states = {
@@ -218,32 +244,32 @@ class ExplorerBot:
                 for k, v in self.neighbor_states.items()
                 if (rospy.Time.now() - v.header.stamp).to_sec() < self.max_neighbor_age
             }
-            control_input: Twist = self.controller.step_control(
-                curr_odom=self.curr_odom,  # current odom
-                self.latest_map,  # latest map
-                true_neighbor_states,  # neighbor states
-                self.max_neighbor_age,
+            ref_vel = self.controller.calc_reference_vels(
+                curr_state=self.curr_state, # current state
+                latest_map=self.latest_map, # latest map
+                neighbor_states=true_neighbor_states, # neighbor states
+                best_frontier=best_frontier, # best frontier
             )
-            self.pub_cmd.publish(control_input)
+            self.controller.step_control(
+                target_state=ref_vel,  # open loop input
+                curr_odom=self.curr_odom,  # current odom
+            )
 
-
-            # TODO: Do we need to do any frontier/map updates in this loop?
-            # May already be processed by the callback
-            # TODO: finish the calls to controller
             state_msg = ExplorerState()
             state_msg.robot_id = self.bot_id
-            state_msg.odometry = self._pose_to_odom(self._get_current_pose())
+            state_msg.odometry = self.curr_odom
             # TODO: fill in flock velocity and frontier velocity from controller
             # I think this means we do need to call controller first
             state_msg.flock_twist = self.controller.flock_vel
             state_msg.frontier_twist = self.controller.frontier_vel
             self.pub_state.publish(state_msg)
             self.pub_map.publish(self.latest_map)
-            rate.sleep()
 
-            
+            rate.sleep()
 
 
 if __name__ == "__main__":
     bot = ExplorerBot()
     bot.run()
+
+    bot.plot_results()

@@ -15,7 +15,7 @@
   <!--  4) Spawn TurtleBot3 #1  -->
   <param 
     name="/robot_1/robot_description"
-    command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro' namespace:=/robot_1"
+    command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro' namespace:=/robot_1 tf_prefix:=robot_1"/>
   />
   <node pkg="gazebo_ros" type="spawn_model" name="spawn_robot_1"
         args="-param /robot_1/robot_description 
@@ -23,6 +23,17 @@
               -model robot_1 
               -x 0 -y 0 -z 0.01 
               -robot_namespace /robot_1"/>
+  <!-- Messing with the turlebot odom publisher stuff -->
+  <param name="tf_prefix" value="robot_1"/>
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher_1">
+        <param name="publish_frequency" value="50.0"/>
+  </node>
+
+  
+  <rosparam ns="robot_1/diff_drive_controller">
+    odom_frame_id:   'robot_1/odom'
+    base_frame_id:   'robot_1/base_footprint'
+  </rosparam>
   <!-- Publish TFs from the URDF -->
   <node pkg="robot_state_publisher"
         type="robot_state_publisher"
@@ -37,7 +48,7 @@
   <!--  5) Spawn TurtleBot3 #2  -->
   <param 
     name="/robot_2/robot_description"
-    command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro' namespace:=/robot_2"
+    command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro' namespace:=/robot_2 tf_prefix:=robot_2"
   />
   <node pkg="gazebo_ros" type="spawn_model" name="spawn_robot_2"
         args="-param /robot_2/robot_description 
@@ -45,6 +56,17 @@
               -model robot_2 
               -x 2 -y 0 -z 0.01 
               -robot_namespace /robot_2"/>
+  <!-- Messing with the turlebot odom publisher stuff -->
+  <param name="tf_prefix" value="robot_2"/>
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher_2">
+        <param name="publish_frequency" value="50.0"/>
+  </node>
+  
+  
+  <rosparam ns="robot_2/diff_drive_controller">
+    odom_frame_id:   'robot_2/odom'
+    base_frame_id:   'robot_2/base_footprint'
+  </rosparam>
   <!-- Publish TFs from the URDF -->
   <node pkg="robot_state_publisher"
         type="robot_state_publisher"
@@ -59,7 +81,7 @@
   <!--  6) Spawn TurtleBot3 #3  -->
   <param 
     name="/robot_3/robot_description"
-    command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro' namespace:=/robot_3"
+    command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro' namespace:=/robot_3 tf_prefix:=robot_3"
   />
   <node pkg="gazebo_ros" type="spawn_model" name="spawn_robot_3"
         args="-param /robot_3/robot_description 
@@ -67,6 +89,16 @@
               -model robot_3 
               -x 4 -y 0 -z 0.01 
               -robot_namespace /robot_3"/>
+  <!-- Messing with the turlebot odom publisher stuff -->
+  <param name="tf_prefix" value="robot_3"/>
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher_3">
+        <param name="publish_frequency" value="50.0"/>
+  </node>
+  
+  <rosparam ns="robot_3/diff_drive_controller">
+    odom_frame_id:   'robot_3/odom'
+    base_frame_id:   'robot_3/base_footprint'
+  </rosparam>
   <!-- Publish TFs from the URDF -->
   <node pkg="robot_state_publisher"
         type="robot_state_publisher"
@@ -102,4 +134,12 @@
       <arg name="robot_id" value="3"/>
     </include>
   </group>
+
+    <!-- static map → each robot’s odom -->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_robot1_odom"
+        args="0 0 0 0 0 0 map robot_1/odom"/>
+    <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_robot2_odom"
+        args="0 0 0 0 0 0 map robot_2/odom"/>
+    <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_robot3_odom"
+        args="0 0 0 0 0 0 map robot_3/odom"/>
 </launch>

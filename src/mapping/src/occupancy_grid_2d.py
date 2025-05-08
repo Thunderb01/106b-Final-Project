@@ -376,7 +376,8 @@ class OccupancyGrid2d(object):
             map2 (numpy.ndarray): Second log-odds map.
             clip_min (float): Minimum value to clip the result.
             clip_max (float): Maximum value to clip the result.
-        Returns:
+        Returns:# Merge current map with neighbor's map if needed
+        merged_map = self.merge_maps(self.amap, neighbor_map)
             numpy.ndarray: Merged log-odds map.
         Raises: 
             ValueError if the shapes of the maps do not match.

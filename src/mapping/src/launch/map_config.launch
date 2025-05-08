@@ -8,12 +8,18 @@
   <arg name="vis_topic" default="/vis/map" />
 
   <!-- Dimensions and bounds. -->
-  <arg name="x_num" default="25" />
+  <arg name="x_num" default="50" />
   <arg name="x_min" default="-10.0" />
   <arg name="x_max" default="10.0" />
-  <arg name="y_num" default="25" />
+  <arg name="y_num" default="50" />
   <arg name="y_min" default="-10.0" />
   <arg name="y_max" default="10.0" />
+
+  <!-- Velocity bounds. -->
+  <arg name="v_min" default="-0.5" />
+  <arg name="v_max" default="0.5" />
+  <arg name="w_min" default="-0.5" />
+  <arg name="w_max" default="0.5" />
 
   <!-- Update parameters. -->
   <arg name="occupied_update" default="0.7" />

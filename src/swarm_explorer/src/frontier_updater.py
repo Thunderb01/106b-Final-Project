@@ -33,15 +33,14 @@ class FrontierUpdater:
         )  # List to store detected frontiers (initialize list of frontiers)
         self.visited = set()  # Set to track visited cells during frontier search
 
-    def update_frontiers(self, neighbor_map: OccupancyGrid2d):
+    def update_frontiers(self):
         """
         Updates the frontiers of the robots in the swarm using neighbor's map data.
 
         Args:
             neighbor_map: Map data from neighboring robots
         """
-        # Merge current map with neighbor's map if needed
-        merged_map = self.merge_maps(self.amap, neighbor_map)
+       
 
         # Get current robot position (implementation depends on your setup)
         current_position = self.get_robot_position()
@@ -50,7 +49,7 @@ class FrontierUpdater:
         current_cell = self.world_to_grid(current_position)
 
         # Perform frontier search
-        self.frontiers = self.find_frontiers(current_cell, merged_map)
+        self.frontiers = self.find_frontiers(current_cell, self.occupancy_map)
 
         # Filter and process frontiers (optional)
         self.filter_frontiers()

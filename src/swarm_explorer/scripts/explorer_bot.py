@@ -79,9 +79,9 @@ class ExplorerBot:
         )
         
         Kp = np.diag([2.0, 0.8])
-        Kd = np.diag([-0.5, 0.5])
+        Kd = np.diag([-0occupancy_map.5, 0.5])
         Ki = np.diag([0.0, 0.0])
-        
+
         self.controller = TurtlebotController(
             tb_id=self.bot_id,
             cohesion_radius=self.cohesion_radius,

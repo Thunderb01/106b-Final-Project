@@ -366,6 +366,24 @@ class OccupancyGrid2d(object):
             bool: True if the voxel is unknown, False otherwise
         """
         return self._map[voxel] >= self._free_threshold and self._map[voxel] <= self._occupied_threshold
+    
+    @staticmethod
+    def merge_maps(map1, map2, clip_min=-10.0, clip_max=10.0):
+        """
+        Merges two log-odds maps via element-wise addition.
+        Args:
+            map1 (numpy.ndarray): First log-odds map.
+            map2 (numpy.ndarray): Second log-odds map.
+            clip_min (float): Minimum value to clip the result.
+            clip_max (float): Maximum value to clip the result.
+        Returns:
+            numpy.ndarray: Merged log-odds map.
+        Raises: 
+            ValueError if the shapes of the maps do not match.
+        """
+        if map1.shape != map2.shape:
+            raise ValueError("Map sizes do not match")
+        return np.clip(map1 + map2, clip_min, clip_max) # log odds are added together beacuse log rules, we are multiplying the probabilities
 
 
 

@@ -16,7 +16,7 @@ class FrontierUpdater:
         Initializes the FrontierUpdater with info from the parameter server.
         """
         self.robot_id = robot_id
-        self.occupancy_map = occupancy_map
+        self.occupancy_map: OccupancyGrid2d = occupancy_map
 
         # obsolete
         # if map_type == "occupancy":
@@ -126,32 +126,87 @@ class FrontierUpdater:
                     queue.append(neighbor)
         
         return region # if len(region) > MIN_FRONTIER_SIZE else None
+    
+    def distance_to_frontier(self, cell, frontier):
+        """
+        Calculate the distance from a cell to the nearest frontier.
+        
+        Args:
+            cell: The cell to check
+            frontier: The frontier region
+            
+        Returns:
+            Distance to the nearest frontier
+        """
+        distances = [np.linalg.norm(np.array(cell) - np.array(f)) for f in frontier]
+        return min(distances) if distances else float('inf')
+    
+    def get_closest_frontier(self, point):
+        """
+        Get the closest frontier to a given cell.
+        
+        Args:
+            cell: The cell to check
+            
+        Returns:
+            Closest frontier region
+        """
+        cell = self.occupancy_map.point_to_voxel(point)
+        closest_frontier = None
+        min_distance = float('inf')
+        
+        for frontier in self.frontiers:
+            distance = self.distance_to_frontier(cell, frontier)
+            if distance < min_distance:
+                min_distance = distance
+                closest_frontier = frontier
+        
+        return closest_frontier
+    
+    def get_closest_frontier_robot(self, robot_id):
+        """
+        Get the closest frontier to a given robot.
+        
+        Args:
+            robot_id: The ID of the robot
+            
+        Returns:
+            Closest frontier region
+        """
+        # Assuming you have a way to get the robot's position
+        robot_position = self.get_robot_position(robot_id)
+        cell = self.world_to_grid(robot_position)
+        
+        return self.get_closest_frontier(cell)
+    
+    
+
 
     # Helper methods
-    def is_free(self, cell_value):
-        """Check if cell is free space."""
-        return cell_value == FREE_SPACE  # Adjust based on your map representation
 
-    def is_frontier(self, cell, cell_value):
-        """Check if cell is a frontier candidate."""
-        return (cell_value == UNKNOWN and 
-                any(self.is_free(map_data.get_cell_value(n)) 
-                    for n in self.get_neighbors(cell, map_data)))
+    def get_frontier_size(self, frontier):
+        """
+        Get the size of a frontier region.
+        
+        Args:
+            frontier: The frontier region
+            
+        Returns:
+            Size of the frontier
+        """
+        return len(frontier)
 
     def get_neighbors(self, cell, map_data):
-        """Get 4-connected neighbors within map bounds."""
-        x, y = cell
-        neighbors = []
-        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < map_data.width and 0 <= ny < map_data.height:
-                neighbors.append((nx, ny))
-        return neighbors
+        return map_data.get_neighbors(cell, connectivity=4)
 
-    def merge_maps(self, local_map, neighbor_map):
-        """Merge local and neighbor maps if needed."""
-        # Implementation depends on your map merging strategy
-        pass
+    def is_free(self, logodds):
+        return logodds is not None and logodds <= self.occupancy_map._free_threshold
+
+    def is_frontier(self, cell, cell_value):
+        return self.occupancy_map.is_unknown(cell_value) and any(
+            self.is_free(self.occupancy_map.get_cell_value(n))
+            for n in self.get_neighbors(cell, self.occupancy_map)
+        )
 
     def filter_frontiers(self):
         """Filter out small or unreachable frontiers."""

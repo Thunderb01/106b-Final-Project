@@ -204,20 +204,6 @@ class FrontierUpdater:
 
     # Helper methods
 
-    
-
-    def get_neighbors(self, cell, map_data):
-        return map_data.get_neighbors(cell, connectivity=4)
-
-    def is_free(self, logodds):
-        return logodds is not None and logodds <= self.occupancy_map._free_threshold
-
-    def is_frontier(self, cell, cell_value):
-        return self.occupancy_map.is_unknown(cell_value) and any(
-            self.is_free(self.occupancy_map.get_cell_value(n))
-            for n in self.get_neighbors(cell, self.occupancy_map)
-        )
-
     def filter_frontiers(self):
         """Filter out small or unreachable frontiers."""
         # Add your filtering logic here

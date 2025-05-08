@@ -17,6 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf2
   turtlesim
   message_generation
+  mapping
 )
 
 ## System dependencies are found with CMake's conventions
@@ -114,6 +115,7 @@ catkin_package(
 #  LIBRARIES proj2_pkg
 #  CATKIN_DEPENDS geometry_msgs roscpp rospy std_msgs tf tf2 turtlesim
 #  DEPENDS system_lib
+  CATKIN_DEPENDS mapping
 )
 
 ###########

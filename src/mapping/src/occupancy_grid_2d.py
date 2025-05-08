@@ -28,12 +28,12 @@ class OccupancyGrid2d(object):
         self._name = rospy.get_name() + "/grid_map_2d"
 
         # Load parameters.
-        if not self.LoadParameters():
+        if not self.load_parameters():
             rospy.logerr("%s: Error loading parameters.", self._name)
             return False
 
         # Register callbacks.
-        if not self.RegisterCallbacks():
+        if not self.register_callbacks():
             rospy.logerr("%s: Error registering callbacks.", self._name)
             return False
 
@@ -43,7 +43,7 @@ class OccupancyGrid2d(object):
         self._initialized = True
         return True
 
-    def LoadParameters(self):
+    def load_parameters(self):
         # Random downsampling fraction, i.e. only keep this fraction of rays.
         if not rospy.has_param("~random_downsample"):
             return False
@@ -137,11 +137,11 @@ class OccupancyGrid2d(object):
 
         return True
 
-    def RegisterCallbacks(self):
+    def register_callbacks(self):
         # Subscriber.
         self._sensor_sub = rospy.Subscriber(self._sensor_topic,
                                             LaserScan,
-                                            self.SensorCallback,
+                                            self.sensor_callback,
                                             queue_size=1)
 
         # Publisher.
@@ -150,9 +150,19 @@ class OccupancyGrid2d(object):
                                         queue_size=10)
 
         return True
+    
+    def get_limits(self):
+        """
+        Gets the limits of the map.
+
+        Returns:
+            A tuple containing the x and y limits of the map.
+            In the format (x_min, x_max, y_min, y_max).
+        """
+        return (self._x_min, self._x_max, self._y_min, self._y_max)
 
     # Callback to process sensor measurements.
-    def SensorCallback(self, msg):
+    def sensor_callback(self, msg):
         if not self._initialized:
             rospy.logerr("%s: Was not initialized.", self._name)
             return
@@ -191,7 +201,7 @@ class OccupancyGrid2d(object):
 
             # Get angle of this ray in fixed frame.
             # TODO!
-            angle_fixed = msg.angle_min + idx * msg.angle_increment
+            angle_fixed = msg.angle_min + idx * msg.angle_increment + yaw
 
             # Throw out this point if it is too close or too far away.
             if r > msg.range_max:
@@ -205,35 +215,159 @@ class OccupancyGrid2d(object):
 
             # Walk along this ray from the scan point to the sensor.
             # Update log-odds at each voxel along the way.
-            # Only update each voxel once. 
+            # Only update each voxel once.
             # The occupancy grid is stored in self._map
             # TODO!
             x_final = sensor_x + r * np.cos(angle_fixed)
             y_final = sensor_y + r * np.sin(angle_fixed)
+   
             # All of these voxels are measured free (only last one is measured occupied)
-            for x in np.arange(sensor_x, x_final, self._x_res):
-                for y in np.arange(sensor_y, y_final, self._y_res):
-                    voxel = self.PointToVoxel(x, y)
-                    log_odd_voxel = self.LogOddsToProbability()
-                    self._map[voxel] # Xij
-                    delta_free = ... # logodd(Xij | Yij = 0) = ∆free +logodd(Xij)
+           
+            step_size = -np.sqrt(self._x_res**2 + self._y_res**2)
+            voxels = []
+            for r_block in np.arange(r, 0, step_size):
+                x = sensor_x + r_block * np.cos(angle_fixed)
+                y = sensor_y + r_block * np.sin(angle_fixed)
+
+                voxel = self.point_to_voxel(x, y) 
+                if voxel not in voxels:
+                    voxels.append(voxel)
+          
+                
+            voxel_final = self.point_to_voxel(x_final, y_final)
+            self._map[voxel_final] = min(self._map[voxel_final] + self._occupied_update, self._occupied_threshold)
+            for voxel in voxels:
+                if voxel != voxel_final:
+                    self._map[voxel] = max(self._map[voxel] + self._free_update, self._free_threshold)
+                
 
         # Visualize.
-        self.Visualize()
+        self.visualize()
 
     # Convert (x, y) coordinates in fixed frame to grid coordinates.
-    def PointToVoxel(self, x, y):
+    def point_to_voxel(self, x, y):
         grid_x = int((x - self._x_min) / self._x_res)
         grid_y = int((y - self._y_min) / self._y_res)
 
         return (grid_x, grid_y)
 
     # Get the center point (x, y) corresponding to the given voxel.
-    def VoxelCenter(self, ii, jj):
+    def get_voxel_center(self, ii, jj):
         center_x = self._x_min + (0.5 + ii) * self._x_res
         center_y = self._y_min + (0.5 + jj) * self._y_res
 
         return (center_x, center_y)
+    
+    def get_voxel_log_odds(self, voxel):
+        """
+        Safely returns the log-odds value of a voxel in the occupancy grid.
+
+        Args:
+            voxel (tuple): (grid_x, grid_y) index
+
+        Returns:
+            float: log-odds value at that voxel, or None if out of bounds
+        """
+        ii, jj = voxel
+        if 0 <= ii < self._x_num and 0 <= jj < self._y_num:
+            return self._map[ii, jj]
+        else:
+            return None
+        
+    def get_voxel_neighbors(self, voxel, connectivity=4):
+        """
+        Returns neighboring voxels of a given voxel.
+
+        Args:
+            voxel (tuple): (grid_x, grid_y) index
+            connectivity (int): 4 or 8 (default: 8)
+
+        Returns:
+            List of neighbor voxel indices (tuples)
+        """
+        ii, jj = voxel
+        neighbors = []
+
+        # Define neighbor offsets (4- or 8-connected)
+        if connectivity == 4:
+            offsets = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        elif connectivity == 8:
+            offsets = [(-1, -1), (-1, 0), (-1, 1),
+                    (0, -1),          (0, 1),
+                    (1, -1),  (1, 0), (1, 1)]
+        else:
+            raise ValueError("Connectivity must be 4 or 8")
+
+        for dx, dy in offsets:
+            ni, nj = ii + dx, jj + dy
+            if 0 <= ni < self._x_num and 0 <= nj < self._y_num:
+                neighbors.append((ni, nj))
+
+        return neighbors
+    
+    def get_surrounding_obstacles(self, voxel, radius=1, is_point=False):
+        """
+        Returns surrounding obstacles within a given radius - in the shape of a diamond.
+
+        Args:
+            voxel (tuple): (grid_x, grid_y) index
+            radius (int): radius to search for obstacles
+
+        Returns:
+            List of obstacle voxel indices and distances (tuples: (voxel, distance))
+        """
+        ii, jj = voxel
+        obstacles = []
+
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                if abs(dx) + abs(dy) <= radius:
+                    ni, nj = ii + dx, jj + dy
+                    if 0 <= ni < self._x_num and 0 <= nj < self._y_num:
+                        if self.is_voxel_occupied((ni, nj)):
+                            dist = np.sqrt(dx**2 + dy**2)
+                            obstacles.append(((ni, nj), dist))
+        if not obstacles:
+            return []
+        # Sort by distance
+        obstacles.sort(key=lambda x: x[1])
+
+        # Return only the voxel indices, not the distances
+        return obstacles if not is_point else [(self.get_voxel_center(vox), dist) for vox, dist in obstacles]
+    
+    def is_voxel_free(self, voxel):
+        """
+        Check if a voxel is free.
+
+        Args:
+            voxel (tuple): (grid_x, grid_y) index
+
+        Returns:
+            bool: True if the voxel is free, False otherwise
+        """
+        return self._map[voxel] < self._free_threshold
+    
+    def is_voxel_occupied(self, voxel):
+        """
+        Check if a voxel is occupied.
+        Args:
+            voxel (tuple): (grid_x, grid_y) index
+        Returns:
+            bool: True if the voxel is occupied, False otherwise
+        """
+        return self._map[voxel] > self._occupied_threshold
+    
+    def is_voxel_unknown(self, voxel):
+        """
+        Check if a voxel is unknown.
+        Args:
+            voxel (tuple): (grid_x, grid_y) index
+        Returns:
+            bool: True if the voxel is unknown, False otherwise
+        """
+        return self._map[voxel] >= self._free_threshold and self._map[voxel] <= self._occupied_threshold
+
+
 
     # Convert between probabity and log-odds.
     def ProbabilityToLogOdds(self, p):
@@ -243,7 +377,7 @@ class OccupancyGrid2d(object):
         return 1.0 / (1.0 + np.exp(-l))
 
     # Colormap to take log odds at a voxel to a RGBA color.
-    def Colormap(self, ii, jj):
+    def colormap(self, ii, jj):
         p = self.LogOddsToProbability(self._map[ii, jj])
 
         c = ColorRGBA()
@@ -257,7 +391,7 @@ class OccupancyGrid2d(object):
     # as a built-in OccupancyGrid message, since that gives us more
     # flexibility for things like color maps and stuff.
     # See http://wiki.ros.org/rviz/DisplayTypes/Marker for a brief tutorial.
-    def Visualize(self):
+    def visualize(self):
         m = Marker()
         m.header.stamp = rospy.Time.now()
         m.header.frame_id = self._fixed_frame
@@ -272,9 +406,9 @@ class OccupancyGrid2d(object):
         for ii in range(self._x_num):
             for jj in range(self._y_num):
                 p = Point(0.0, 0.0, 0.0)
-                (p.x, p.y) = self.VoxelCenter(ii, jj)
+                (p.x, p.y) = self.get_voxel_center(ii, jj)
 
                 m.points.append(p)
-                m.colors.append(self.Colormap(ii, jj))
+                m.colors.append(self.colormap(ii, jj))
 
         self._vis_pub.publish(m)

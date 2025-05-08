@@ -5,88 +5,32 @@ Code for comparing the maps of the robots in the swarm.
 import rospy
 import numpy as np
 from swarm_explorer.msg import ExplorerState
+from mapping.src.occupancy_grid_2d import OccupancyGrid2d
 
 
-class AbstractMap:
-    def __init__(self, latest_map):
-        """
-        Initializes the map with the given data.
-        """
-        self.latest_map = latest_map
-
-    def get_cell(self, idx):
-        pass
-
-    def set_cell(self, idx, value):
-        pass
-
-    def all_cells_known(self):
-        """
-        Returns True if all cells in the map are known.
-        """
-        pass
-
-
-class OccupancyMap(AbstractMap):
-    def __init__(self, latest_map):
-        """
-        Initializes the occupancy map with the given data.
-        """
-        super().__init__(latest_map)
-        self.latest_map = np.array(latest_map.data).reshape(
-            latest_map.info.height, latest_map.info.width
-        )
-
-    def get_cell(self, idx):
-        return self.latest_map[idx]
-
-    def set_cell(self, idx, value):
-        self.latest_map[idx] = value
-
-    def is_free(self, idx):
-        return self.latest_map[idx] == 0 # TODO idk how to tell if a cell is free
-
-    def all_cells_known(self):
-        return np.all(self.latest_map != -1)
-
-
-# TODO: update this map to work for SLAM data and whatever we need for this
-class SLAMMap(AbstractMap):
-    def __init__(self, latest_map):
-        """
-        Initializes the SLAM map with the given data.
-        """
-        super().__init__(latest_map)
-        self.latest_map = np.array(latest_map.data).reshape(
-            latest_map.info.height, latest_map.info.width
-        )
-
-    def get_cell(self, idx):
-        return self.latest_map[idx]
-
-    def set_cell(self, idx, value):
-        self.latest_map[idx] = value
 
 
 class FrontierUpdater:
-    def __init__(self, robot_id, map_type, latest_map):
+    def __init__(self, robot_id, occupancy_map):
         """
         Initializes the FrontierUpdater with info from the parameter server.
         """
         self.robot_id = robot_id
-        self.map_type = map_type
-        if map_type == "occupancy":
-            self.amap = OccupancyMap(latest_map)
-        elif map_type == "slam":
-            self.amap = SLAMMap(latest_map)
-        else:
-            rospy.logerr("Invalid map type specified. Exiting.")
-            rospy.signal_shutdown("Invalid map type specified.")
-            return
+        self.occupancy_map = occupancy_map
+
+        # obsolete
+        # if map_type == "occupancy":
+        #     self.amap = OccupancyMap(latest_map)
+        # elif map_type == "slam":
+        #     self.amap = SLAMMap(latest_map)
+        # else:
+        #     rospy.logerr("Invalid map type specified. Exiting.")
+        #     rospy.signal_shutdown("Invalid map type specified.")
+        #     return
         self.frontiers = [] # List to store detected frontiers (initialize list of frontiers)
         self.visited = set() # Set to track visited cells during frontier search
 
-    def update_frontiers(self, neighbor_map: AbstractMap):
+    def update_frontiers(self, neighbor_map: OccupancyGrid2d):
         """
         Updates the frontiers of the robots in the swarm using neighbor's map data.
         

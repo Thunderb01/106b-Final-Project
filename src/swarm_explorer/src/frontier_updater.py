@@ -7,6 +7,42 @@ import numpy as np
 from swarm_explorer.msg import ExplorerState
 from mapping.src.occupancy_grid_2d import OccupancyGrid2d
 
+class Frontier:
+    def __init__(self):
+        self.cells = []  # List of cells in the frontier
+        self.size = 0  # Size of the frontier
+    
+    def get_centroid(self):
+        """
+        Calculate the centroid of the frontier.
+        """
+        if not self.cells:
+            return None
+        x_sum = sum(cell[0] for cell in self.cells)
+        y_sum = sum(cell[1] for cell in self.cells)
+        self.centroid = (x_sum / len(self.cells), y_sum / len(self.cells))
+        return self.centroid
+    
+    def add_cell(self, cell):
+        """
+        Add a cell to the frontier.
+        """
+        self.cells.append(cell)
+        self.size += 1
+
+    def distance_to_frontier(self, cell):
+        """
+        Calculate the distance from a cell to the nearest frontier.
+
+        Args:
+            cell: The cell to check
+            frontier: The frontier region
+
+        Returns:
+            Distance to the nearest frontier
+        """
+        distances = [np.linalg.norm(np.array(cell) - np.array(f)) for f in self.cells]
+        return min(distances) if distances else float("inf")
 
 class FrontierUpdater:
     def __init__(self, robot_id, occupancy_map, frontier_dist_wt, frontier_size_wt):
@@ -33,24 +69,22 @@ class FrontierUpdater:
         )  # List to store detected frontiers (initialize list of frontiers)
         self.visited = set()  # Set to track visited cells during frontier search
 
-    def update_frontiers(self, neighbor_map: OccupancyGrid2d):
+    def update_frontiers(self, current_position):
         """
         Updates the frontiers of the robots in the swarm using neighbor's map data.
 
         Args:
             neighbor_map: Map data from neighboring robots
         """
-        # Merge current map with neighbor's map if needed
-        merged_map = self.merge_maps(self.amap, neighbor_map)
 
-        # Get current robot position (implementation depends on your setup)
-        current_position = self.get_robot_position()
-
-        # Convert position to grid coordinates if needed
-        current_cell = self.world_to_grid(current_position)
+        # Convert position to voxel coordinates if needed
+        current_cell = self.occupancy_map.point_to_voxel(current_position)
+        if current_cell is None:
+            rospy.logerr("Current position is out of bounds.")
+            return
 
         # Perform frontier search
-        self.frontiers = self.find_frontiers(current_cell, merged_map)
+        self.frontiers = self.find_frontiers(current_cell, self.occupancy_map)
 
         # Filter and process frontiers (optional)
         self.filter_frontiers()
@@ -58,7 +92,7 @@ class FrontierUpdater:
         # Publish frontiers if needed
         self.publish_frontiers()
 
-    def find_frontiers(self, start_cell, map_data):
+    def find_frontiers(self, start_cell, map_data: OccupancyGrid2d):
         """
         Implementation of Algorithm 1 - Frontier cell search.
 
@@ -82,18 +116,17 @@ class FrontierUpdater:
             self.visited.add(cell)
 
             # Get 4-connected neighbors (up, down, left, right)
-            neighbors = self.get_neighbors(cell, map_data)
+            neighbors = map_data.get_voxel_neighbors(cell, connectivity=4)
 
             for neighbor in neighbors:
                 # Skip if already visited
                 if neighbor in self.visited:
                     continue
+                
 
-                cell_value = map_data.get_cell_value(neighbor)
-
-                if self.is_free(cell_value):
+                if map_data.is_voxel_free(neighbor):
                     queue.append(neighbor)
-                elif self.is_frontier(cell, cell_value):
+                elif map_data.is_voxel_unknown(neighbor):
                     # Found a frontier cell, now find the entire frontier region
                     frontier_region = self.find_frontier_region(neighbor, map_data)
                     if frontier_region:
@@ -101,7 +134,7 @@ class FrontierUpdater:
 
         return frontiers
 
-    def find_frontier_region(self, start_cell, map_data):
+    def find_frontier_region(self, start_cell, map_data: OccupancyGrid2d):
         """
         Implementation of Algorithm 2 - Frontier region connectivity search
 
@@ -121,28 +154,15 @@ class FrontierUpdater:
             visited.add(cell)
             region.append(cell)
 
-            neighbors = self._get_neighbors(cell, map_data)
+            neighbors = map_data.get_voxel_neighbors(cell, connectivity=4)
 
             for neighbor in neighbors:
-                cell_value = map_data.get_cell_value(neighbor)
-                if self._is_frontier_candidate(cell_value) and neighbor not in visited:
+                if map_data.is_voxel_unknown(neighbor) and neighbor not in visited:
                     queue.append(neighbor)
 
         return region  # if len(region) > MIN_FRONTIER_SIZE else None
 
-    def distance_to_frontier(self, cell, frontier):
-        """
-        Calculate the distance from a cell to the nearest frontier.
-
-        Args:
-            cell: The cell to check
-            frontier: The frontier region
-
-        Returns:
-            Distance to the nearest frontier
-        """
-        distances = [np.linalg.norm(np.array(cell) - np.array(f)) for f in frontier]
-        return min(distances) if distances else float("inf")
+    
 
     def get_best_frontier(self, point):
         """
@@ -157,8 +177,8 @@ class FrontierUpdater:
         min_cost = float("inf")
 
         for frontier in self.frontiers:
-            distance = self.distance_to_frontier(cell, frontier)
-            size = self.get_frontier_size(frontier)
+            distance = frontier.distance_to_frontier(cell)
+            size = frontier.size
             cost = self.frontier_dist_wt * distance - self.frontier_size_wt * size
             if cost < min_cost:
                 min_cost = cost
@@ -183,30 +203,6 @@ class FrontierUpdater:
         return self.get_closest_frontier(cell)
 
     # Helper methods
-
-    def get_frontier_size(self, frontier):
-        """
-        Get the size of a frontier region.
-
-        Args:
-            frontier: The frontier region
-
-        Returns:
-            Size of the frontier
-        """
-        return len(frontier)
-
-    def get_neighbors(self, cell, map_data):
-        return map_data.get_neighbors(cell, connectivity=4)
-
-    def is_free(self, logodds):
-        return logodds is not None and logodds <= self.occupancy_map._free_threshold
-
-    def is_frontier(self, cell, cell_value):
-        return self.occupancy_map.is_unknown(cell_value) and any(
-            self.is_free(self.occupancy_map.get_cell_value(n))
-            for n in self.get_neighbors(cell, self.occupancy_map)
-        )
 
     def filter_frontiers(self):
         """Filter out small or unreachable frontiers."""

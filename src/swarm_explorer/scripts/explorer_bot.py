@@ -71,7 +71,12 @@ class ExplorerBot:
         rospy.Subscriber(self.map_topic, rospy.AnyMsg, self._map_callback)
 
         # TODO: fill in these with the correct classes/parameters
-        self.frontier_updater = FrontierUpdater()
+        self.frontier_updater = FrontierUpdater(
+            robot_id=self.bot_id,
+            occupancy_map=self.latest_map,
+            frontier_dist_wt=self.frontier_dist_wt,
+            frontier_size_wt=self.frontier_size_wt,
+        )
         self.controller = Controller(
             neighbors=self.neighbor_states, comm_radius=self.comm_radius
         )

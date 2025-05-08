@@ -1,9 +1,24 @@
 ---
 # Configuration file for swarm parameters
+map_type: "occupancy_grid" # options: occupancy_grid, SLAM
+# Communication parameters
 comm_radius: 5.0
 publish_rate: 5.0
 max_neighbor_age: 0.5 # seconds
-map_type: "occupancy_grid" # options: occupancy_grid, SLAM
+# Radii
+cohesion_radius: 1.5
+separation_radius: 0.65
+alignment_radius: 1.5
+collision_radius: 1.7 # obstacle avoidance radius
+# Weights
+alignment_weight: 0.5
+cohesion_weight: 0.23
+separation_weight: 1.1
+wall_weight: 1.1
+frontier_weight: 0.08
+obstacle_weight: 1.1
+frontier_dist_weight: 0.001
+frontier_size_weight: 1.0
 # define initial poses for each robot
 initial_poses:
   - { x: 0.0, y: 0.0, theta: 0.0 } # robot 1

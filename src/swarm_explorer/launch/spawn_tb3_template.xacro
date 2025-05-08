@@ -1,0 +1,32 @@
+<launch xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:property name="N"       value="${num_bots}"/>
+  <xacro:property name="MODEL"   value="${model}"/>
+  <xacro:property name="SPACING" value="${spacing}"/>
+
+  <xacro:for each="i" count="${N}">
+    <xacro:property name="ID" value="${xacro:index()+1}"/>
+
+    <!-- load URDF parameter -->
+    <param command="$(find xacro)/xacro --inorder
+                    '$(find turtlebot3_description)/urdf/turtlebot3_${MODEL}.urdf.xacro'
+                    namespace:=/robot_${ID}"
+           name="/robot_${ID}/robot_description"/>
+
+    <!-- spawn model -->
+    <node pkg="gazebo_ros" type="spawn_model" name="spawn_robot_${ID}"
+          args="-param robot_description_robot_${ID}
+                -urdf
+                -model robot_${ID}
+                -x $[SPACING*${xacro:index()}] -y 0 -z 0.01
+                -Y 0
+                -robot_namespace /robot_${ID}"
+          output="screen"/>
+
+    <!-- bringup TB3 -->
+    <include file="$(find turtlebot3_bringup)/launch/robot_remote.launch">
+      <arg name="namespace"    value="robot_${ID}"/>
+      <arg name="use_sim_time" value="true"/>
+      <arg name="model"        value="${MODEL}"/>
+    </include>
+  </xacro:for>
+</launch>

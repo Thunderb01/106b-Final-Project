@@ -6,12 +6,12 @@ import tf2_ros
 from geometry_msgs.msg import TransformStamped, Twist
 import tf_conversions
 
-from mapping.src.occupancy_grid_2d import OccupancyGrid2d
+from mapping.occupancy_grid_2d import OccupancyGrid2d
 from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import Odometry
-from final_proj.msg import ExplorerState, SLAMData
-from final_proj.src.frontier import FrontierUpdater
-from final_proj.src.controller import TurtlebotController
+from swarm_explorer.msg import ExplorerStateMsg, ExplorerMapMsg
+from swarm_explorer.frontier_updater import FrontierUpdater
+from swarm_explorer.controller import TurtlebotController
 from typing import Dict, List
 
 
@@ -29,10 +29,10 @@ class ExplorerBot:
         self.initialize_params()
 
         # topics
-        if self.map_type not in ["occupancy", "slam"]:
-            rospy.logerr("Invalid map topic specified. Exiting.")
-            rospy.signal_shutdown("Invalid map topic specified.")
-            return
+        # if self.map_type not in ["occupancy", "slam"]:
+        #     rospy.logerr("Invalid map topic specified. Exiting.")
+        #     rospy.signal_shutdown("Invalid map topic specified.")
+        #     return
         self.map_topic: str = "/swarm/robot_maps"
         self.map_pub_topic: str = f"/robot_{self.bot_id}/incoming/map"
         self.state_topic: str = "/swarm/robot_states"
@@ -41,6 +41,7 @@ class ExplorerBot:
 
         # storage for callbacks
         self.latest_map: OccupancyGrid2d = OccupancyGrid2d()
+        self.latest_map.Initialize()
         self.neighbor_states: Dict[int, Odometry] = {}  # robot_id → Odometry
 
         # publish static map→odom
@@ -64,12 +65,12 @@ class ExplorerBot:
         # publishers and subscribers
         # self.pub_cmd = rospy.Publisher(self.cmd_topic, Twist, queue_size=1)
         self.pub_state = rospy.Publisher(
-            self.state_pub_topic, ExplorerState, queue_size=1
+            self.state_pub_topic, ExplorerStateMsg, queue_size=1
         )
-        self.pub_map = rospy.Publisher(self.map_pub_topic, rospy.AnyMsg, queue_size=1)
+        self.pub_map = rospy.Publisher(self.map_pub_topic, ExplorerMapMsg, queue_size=1)
         # subscribe to other robots' states and maps
-        rospy.Subscriber(self.state_topic, ExplorerState, self._state_callback)
-        rospy.Subscriber(self.map_topic, rospy.AnyMsg, self._map_callback)
+        rospy.Subscriber(self.state_topic, ExplorerStateMsg, self._state_callback)
+        rospy.Subscriber(self.map_topic, ExplorerMapMsg, self._map_callback)
         rospy.Subscriber(f"/robot_{self.bot_id}/odom/", Odometry, self._odom_callback)
         self.tfBuffer = tf2_ros.Buffer()
         self.tfListener = tf2_ros.TransformListener(self.tfBuffer)
@@ -83,13 +84,13 @@ class ExplorerBot:
         )
         
         Kp = np.diag([2.0, 0.8])
-        Kd = np.diag([-0occupancy_map.5, 0.5])
+        Kd = np.diag([-0.5, 0.5])
         Ki = np.diag([0.0, 0.0])
 
         self.controller = TurtlebotController(
             tb_id=self.bot_id,
-            map_obj=self.latest_map,
-            neighbor_states=self.neighbor_states,
+            # map_obj=self.latest_map,
+            # neighbor_states=self.neighbor_states,
             cohesion_radius=self.cohesion_radius,
             separation_radius=self.separation_radius,
             alignment_radius=self.alignment_radius,
@@ -134,18 +135,42 @@ class ExplorerBot:
         self.collision_radius: float = rospy.get_param(
             "~collision_radius", 0.5
         )
+        # Algorithm weights
+        self.cohesion_weight: float = rospy.get_param(
+            "~cohesion_weight", 0.23
+        )
+        self.separation_weight: float = rospy.get_param(
+            "~separation_weight", 1.1
+        )
+        self.alignment_weight: float = rospy.get_param(
+            "~alignment_weight", 0.5
+        )
+        self.obstacle_weight: float = rospy.get_param(
+            "~obstacle_weight", 1.1
+        )
+        self.wall_weight: float = rospy.get_param("~wall_weight", 1.1)
+        self.frontier_weight: float = rospy.get_param(
+            "~frontier_weight", 0.08
+        )
+        # Frontier parameters
+        self.frontier_dist_wt: float = rospy.get_param(
+            "~frontier_dist_wt", 0.001
+        )
+        self.frontier_size_wt: float = rospy.get_param(
+            "~frontier_size_wt", 1.0
+        )
 
-        self.map_type: str = rospy.get_param("~map_type")  # either occupancy or slam
+        # self.map_type: str = rospy.get_param("~map_type")  # either occupancy or slam
 
 
-    def _map_callback(self, msg):
+    def _map_callback(self, msg: ExplorerMapMsg):
         """
         Callback function for the map topic.
         This function will be called whenever a new message is received on the map topic.
         """
         # You can add your processing logic here
-        neighbor_map = OccupancyGrid2d(msg)
-        self.latest_map = OccupancyGrid2d.merge_maps(self.latest_map, neighbor_map)
+        neighbor_map = OccupancyGrid2d.from_msg(msg)
+        self.latest_map._map = OccupancyGrid2d.merge_maps(self.latest_map, neighbor_map)
 
     def _state_callback(self, msg):
         """
@@ -231,10 +256,18 @@ class ExplorerBot:
                 rate.sleep()
                 continue
             # Update frontiers based on the latest map
-            self.frontier_updater.update_frontiers()
+            self.frontier_updater.update_frontiers(
+                np.array([self.curr_state['x'], self.curr_state['y']])
+            )
             # TODO: what message type is our map?
-            self.pub_map.publish(self.latest_map)
-            best_frontier = self.frontier_updater.get_best_frontier()
+            map_msg = self.latest_map.to_msg()
+            map_msg.robot_id = self.bot_id
+            self.pub_map.publish(map_msg)
+
+            # Find target frontier
+            best_frontier = self.frontier_updater.get_best_frontier(
+                np.array([self.curr_state["x"], self.curr_state["y"]])
+            )
             if best_frontier is None:
                 continue
 
@@ -245,7 +278,7 @@ class ExplorerBot:
                 if (rospy.Time.now() - v.header.stamp).to_sec() < self.max_neighbor_age
             }
             ref_vel = self.controller.calc_reference_vels(
-                curr_state=self.curr_state, # current state
+                curr_state=np.array([self.curr_state['x'], self.curr_state['y'], self.curr_state['theta']]), # current state
                 latest_map=self.latest_map, # latest map
                 neighbor_states=true_neighbor_states, # neighbor states
                 best_frontier=best_frontier, # best frontier
@@ -255,7 +288,7 @@ class ExplorerBot:
                 curr_odom=self.curr_odom,  # current odom
             )
 
-            state_msg = ExplorerState()
+            state_msg = ExplorerStateMsg()
             state_msg.robot_id = self.bot_id
             state_msg.odometry = self.curr_odom
             # TODO: fill in flock velocity and frontier velocity from controller
@@ -263,7 +296,6 @@ class ExplorerBot:
             state_msg.flock_twist = self.controller.flock_vel
             state_msg.frontier_twist = self.controller.frontier_vel
             self.pub_state.publish(state_msg)
-            self.pub_map.publish(self.latest_map)
 
             rate.sleep()
 
@@ -272,4 +304,4 @@ if __name__ == "__main__":
     bot = ExplorerBot()
     bot.run()
 
-    bot.plot_results()
+    bot.controller.plot_results()

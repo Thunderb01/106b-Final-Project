@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import rospy
-from msg import ExplorerState
+from swarm_explorer.msg import ExplorerStateMsg, ExplorerMapMsg
 import numpy as np
 
 
@@ -18,18 +18,19 @@ class SwarmRelay(object):
         self.bots_dict = {}  # robot_id → (x,y)
 
         # update positions, publish to other robots
-        rospy.Subscriber("/swarm/robot_states", ExplorerState, self.states_cb)
+        rospy.Subscriber("/swarm/robot_states", ExplorerStateMsg, self.states_cb)
 
         # update maps
-        rospy.Subscriber("/swarm/robot_maps", rospy.AnyMsg, self.mapping_cb)
+        rospy.Subscriber("/swarm/robot_maps", ExplorerMapMsg, self.mapping_cb)
 
         # will hold publishers per robot
-        self.pubs = {}
+        self.state_pubs = {}
+        self.map_pubs = {}
 
         rospy.loginfo("Swarm relay node started")
         rospy.spin()
 
-    def states_cb(self, msg: ExplorerState):
+    def states_cb(self, msg: ExplorerStateMsg):
         """
         Update the position of the robot with the given id.
         The position is given in the message.
@@ -47,17 +48,15 @@ class SwarmRelay(object):
             if robot_id not in self.pubs:
                 topic = f"/robot_{robot_id}/incoming/state"  # TODO: change topic name
                 self.pubs[robot_id] = rospy.Publisher(
-                    topic, ExplorerState, queue_size=1
+                    topic, ExplorerStateMsg, queue_size=1
                 )
-            self.pubs[robot_id].publish(msg)
+            self.state_pubs[robot_id].publish(msg)
 
-    def mapping_cb(self, msg: ExplorerState):
+    def mapping_cb(self, msg: ExplorerMapMsg):
         """
-        Update the position of the robot with the given id.
-        The position is given in the message.
+        Update the map of the robot with the given id.
+        The map is given in the message.
         """
-        self.bots_dict[msg.robot_id] = msg  # TODO: any issues with pointer stuff?
-
         # publish the message to all robots within the communication radius
         for robot_id in self.bots_dict:
             if robot_id == msg.robot_id:
@@ -69,11 +68,11 @@ class SwarmRelay(object):
             if robot_id not in self.pubs:
                 topic = f"/robot_{robot_id}/incoming/map"  # TODO: change topic name
                 self.pubs[robot_id] = rospy.Publisher(
-                    topic, ExplorerState, queue_size=1
+                    topic, ExplorerMapMsg, queue_size=1
                 )
-            self.pubs[robot_id].publish(msg)
+            self.map_pubs[robot_id].publish(msg)
 
-    def _within_radius(self, sender_id: str, recipient_id: str) -> bool:
+    def _within_radius(self, sender_id: int, recipient_id: int) -> bool:
         p1 = self.bots_dict.get(sender_id).state
         p2 = self.bots_dict.get(recipient_id).state
         if not p1 or not p2:

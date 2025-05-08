@@ -1,0 +1,26 @@
+---
+frames:
+  fixed: odom
+  sensor: base_link
+
+topics:
+  vis:   /scan_map
+  sensor: /scan
+
+x:
+  num: 50
+  min: -10.0
+  max: 10.0
+
+y:
+  num: 50
+  min: -10.0
+  max: 10.0
+
+update:
+  occupied:           0.7
+  occupied_threshold: 0.97
+  free:               0.3
+  free_threshold:     0.03
+
+random_downsample: 0.1

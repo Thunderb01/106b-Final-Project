@@ -1,0 +1,105 @@
+<launch>
+  <!--  1) Use sim time  -->
+  <param name="use_sim_time" value="true"/>
+
+  <!--  2) How many bots? (for your own reference)  -->
+  <arg name="num_bots" default="3"/>
+
+  <!--  3) Start Gazebo with an empty world  -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name"  value="$(find gazebo_ros)/worlds/empty.world"/>
+    <arg name="paused"      value="false"/>
+    <arg name="use_sim_time" value="true"/>
+  </include>
+
+  <!--  4) Spawn TurtleBot3 #1  -->
+  <param 
+    name="/robot_1/robot_description"
+    command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro' namespace:=/robot_1"
+  />
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_robot_1"
+        args="-param /robot_1/robot_description 
+              -urdf 
+              -model robot_1 
+              -x 0 -y 0 -z 0.01 
+              -robot_namespace /robot_1"/>
+  <!-- Publish TFs from the URDF -->
+  <node pkg="robot_state_publisher"
+        type="robot_state_publisher"
+        name="robot_state_publisher_1"
+        ns="robot_1">
+    <param name="robot_description"
+           command="$(find xacro)/xacro --inorder
+             '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro'
+             namespace:=/robot_1"/>
+  </node>
+
+  <!--  5) Spawn TurtleBot3 #2  -->
+  <param 
+    name="/robot_2/robot_description"
+    command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro' namespace:=/robot_2"
+  />
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_robot_2"
+        args="-param /robot_2/robot_description 
+              -urdf 
+              -model robot_2 
+              -x 2 -y 0 -z 0.01 
+              -robot_namespace /robot_2"/>
+  <!-- Publish TFs from the URDF -->
+  <node pkg="robot_state_publisher"
+        type="robot_state_publisher"
+        name="robot_state_publisher_2"
+        ns="robot_2">
+    <param name="robot_description"
+           command="$(find xacro)/xacro --inorder
+             '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro'
+             namespace:=/robot_2"/>
+  </node>
+
+  <!--  6) Spawn TurtleBot3 #3  -->
+  <param 
+    name="/robot_3/robot_description"
+    command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro' namespace:=/robot_3"
+  />
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_robot_3"
+        args="-param /robot_3/robot_description 
+              -urdf 
+              -model robot_3 
+              -x 4 -y 0 -z 0.01 
+              -robot_namespace /robot_3"/>
+  <!-- Publish TFs from the URDF -->
+  <node pkg="robot_state_publisher"
+        type="robot_state_publisher"
+        name="robot_state_publisher_3"
+        ns="robot_3">
+    <param name="robot_description"
+           command="$(find xacro)/xacro --inorder
+             '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro'
+             namespace:=/robot_3"/>
+  </node>
+
+   <!-- 7) Start your relay 
+  <include file="$(find swarm_explorer)/launch/swarm_relay.launch">
+    <arg name="comm_radius" value="5.0"/>
+  </include> -->
+
+  <!--  8) Load swarm parameters  -->
+  <rosparam file="$(find swarm_explorer)/config/swarm_params.yaml" command="load"/>
+
+  <!--  9) Launch each explorer_bot  -->
+  <group ns="robot_1">
+    <include file="$(find swarm_explorer)/launch/explorer_bot.launch">
+      <arg name="robot_id" value="1"/>
+    </include>
+  </group>
+  <group ns="robot_2">
+    <include file="$(find swarm_explorer)/launch/explorer_bot.launch">
+      <arg name="robot_id" value="2"/>
+    </include>
+  </group>
+  <group ns="robot_3">
+    <include file="$(find swarm_explorer)/launch/explorer_bot.launch">
+      <arg name="robot_id" value="3"/>
+    </include>
+  </group>
+</launch>

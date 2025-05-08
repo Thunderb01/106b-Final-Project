@@ -12,6 +12,10 @@ from sensor_msgs.msg import LaserScan
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
 from std_msgs.msg import ColorRGBA
+from swarm_explorer.msg import ExplorerMapMsg
+from nav_msgs.msg import OccupancyGrid
+from std_msgs.msg import Header
+from geometry_msgs.msg import Pose
 
 import numpy as np
 
@@ -23,8 +27,21 @@ class OccupancyGrid2d(object):
         self._tf_buffer = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer)
 
+    @classmethod
+    def from_msg(cls, msg: ExplorerMapMsg):
+        """
+        Initializes the OccupancyGrid2d object with a given ExplorerMapMsg message.
+
+        Args:
+            msg (ExplorerMapMsg): The occupancy grid message to initialize the object with.
+        """
+        obj = cls()
+        obj.Initialize(setup_callbacks=False)
+        obj._map = np.array(msg.data).reshape((msg.data.info.width, msg.data.info.height))
+        return obj
+
     # Initialization and loading parameters.
-    def Initialize(self):
+    def Initialize(self, setup_callbacks=True):
         self._name = rospy.get_name() + "/grid_map_2d"
 
         # Load parameters.
@@ -33,7 +50,8 @@ class OccupancyGrid2d(object):
             return False
 
         # Register callbacks.
-        if not self.register_callbacks():
+        
+        if setup_callbacks and not self.register_callbacks():
             rospy.logerr("%s: Error registering callbacks.", self._name)
             return False
 
@@ -44,98 +62,56 @@ class OccupancyGrid2d(object):
         return True
 
     def load_parameters(self):
-        # Random downsampling fraction, i.e. only keep this fraction of rays.
-        if not rospy.has_param("~random_downsample"):
-            return False
-        self._random_downsample = rospy.get_param("~random_downsample")
+    # List of (param_name, attr_name, transform) tuples:
+        params = [
+            # downsample
+            ("random_downsample", "_random_downsample", lambda v: v),
+            # x axis
+            ("x/num",            "_x_num",            int),
+            ("x/min",            "_x_min",            float),
+            ("x/max",            "_x_max",            float),
+            # y axis
+            ("y/num",            "_y_num",            int),
+            ("y/min",            "_y_min",            float),
+            ("y/max",            "_y_max",            float),
+            # update
+            ("update/occupied",            "_occupied_update",          self.ProbabilityToLogOdds),
+            ("update/occupied_threshold",  "_occupied_threshold",       self.ProbabilityToLogOdds),
+            ("update/free",                "_free_update",              self.ProbabilityToLogOdds),
+            ("update/free_threshold",      "_free_threshold",           self.ProbabilityToLogOdds),
+            # topics
+            ("topics/sensor",    "_sensor_topic",     lambda v: v),
+            ("topics/vis",       "_vis_topic",        lambda v: v),
+            # frames
+            ("frames/sensor",    "_sensor_frame",     lambda v: v),
+            ("frames/fixed",     "_fixed_frame",      lambda v: v),
+        ]
 
-        # Dimensions and bounds.
-        # TODO! You'll need to set values for class variables called:
-        # -- self._x_num
-        if not rospy.has_param("~x/num"):
-            return False
-        self._x_num = rospy.get_param("~x/num")
+        node_ns = rospy.get_name()            # e.g. "/robot_1/robot_1/explorer_bot"
+        base = rospy.get_name()
 
-        # -- self._x_min
-        if not rospy.has_param("~x/min"):
-            return False
-        self._x_min = rospy.get_param("~x/min")
+        for param_name, attr, cast in params:
+            key = f"{base}/{param_name}"
+            if not rospy.has_param(key):
+                rospy.logerr(f"{node_ns}: missing param `{key}`")
+                return False
+            raw = rospy.get_param(key)
+            try:
+                setattr(self, attr, cast(raw))
+            except Exception as e:
+                rospy.logerr(f"{node_ns}: failed to cast param `{key}` ({raw}) -> {e}")
+                return False
 
-        # -- self._x_max
-        if not rospy.has_param("~x/max"):
+        # now compute resolutions
+        try:
+            self._x_res = (self._x_max - self._x_min) / self._x_num
+            self._y_res = (self._y_max - self._y_min) / self._y_num
+        except Exception as e:
+            rospy.logerr(f"{node_ns}: error computing resolutions -> {e}")
             return False
-        self._x_max = rospy.get_param("~x/max")
-
-        # -- self._x_res # The resolution in x. Note: This isn't a ROS parameter. What will you do instead?
-        self._x_res = (self._x_max - self._x_min) / self._x_num
-
-        # -- self._y_num
-        if not rospy.has_param("~y/num"):
-            return False
-        self._y_num = rospy.get_param("~y/num")
-
-        # -- self._y_min
-        if not rospy.has_param("~y/min"):
-            return False
-        self._y_min = rospy.get_param("~y/min")
-
-        # -- self._y_max
-        if not rospy.has_param("~y/max"):
-            return False
-        self._y_max = rospy.get_param("~y/max")
-
-        # -- self._y_res # The resolution in y. Note: This isn't a ROS parameter. What will you do instead?
-        self._y_res = (self._y_max - self._y_min) / self._y_num
-
-        # Update parameters.
-        if not rospy.has_param("~update/occupied"):
-            return False
-        self._occupied_update = self.ProbabilityToLogOdds(
-            rospy.get_param("~update/occupied")
-        )
-
-        if not rospy.has_param("~update/occupied_threshold"):
-            return False
-        self._occupied_threshold = self.ProbabilityToLogOdds(
-            rospy.get_param("~update/occupied_threshold")
-        )
-
-        if not rospy.has_param("~update/free"):
-            return False
-        self._free_update = self.ProbabilityToLogOdds(
-            rospy.get_param("~update/free")
-        )
-
-        if not rospy.has_param("~update/free_threshold"):
-            return False
-        self._free_threshold = self.ProbabilityToLogOdds(
-            rospy.get_param("~update/free_threshold")
-        )
-
-        # Topics.
-        # TODO! You'll need to set values for class variables called:
-        # -- self._sensor_topic
-        if not rospy.has_param("~topics/sensor"):
-            return False
-        self._sensor_topic = rospy.get_param("~topics/sensor")
-
-        # -- self._vis_topic
-        if not rospy.has_param("~topics/vis"):
-            return False
-        self._vis_topic = rospy.get_param("~topics/vis")
-
-        # Frames.
-        # TODO! You'll need to set values for class variables called:
-        # -- self._sensor_frame
-        if not rospy.has_param("~frames/sensor"):
-            return False
-        self._sensor_frame = rospy.get_param("~frames/sensor")
-        # -- self._fixed_frame
-        if not rospy.has_param("~frames/fixed"):
-            return False
-        self._fixed_frame = rospy.get_param("~frames/fixed")
 
         return True
+
 
     def register_callbacks(self):
         # Subscriber.
@@ -243,6 +219,42 @@ class OccupancyGrid2d(object):
 
         # Visualize.
         self.visualize()
+    
+    def to_msg(self):
+        """
+        Converts the occupancy grid to a ROS ExplorerMapMsg message. (doesn't set id)
+        Returns:
+            ExplorerMapMsg: The occupancy grid message.
+        """
+        msg = ExplorerMapMsg()
+        msg.grid = OccupancyGrid()
+        msg.grid.header = Header()
+        msg.grid.header.stamp = rospy.Time.now()
+        msg.grid.header.frame_id = self._fixed_frame
+
+        msg.grid.info.resolution = self._x_res
+        msg.grid.info.width = self._x_num
+        msg.grid.info.height = self._y_num
+
+        msg.grid.info.origin = Pose()
+        msg.grid.info.origin.position.x = self._x_min
+        msg.grid.info.origin.position.y = self._y_min
+        msg.grid.info.origin.position.z = 0.0
+        msg.grid.info.origin.orientation.w = 1.0  # no rotation
+
+        # Convert log-odds map to probability (0-100) or -1 for unknown
+        data = []
+        for ii in range(self._x_num):
+            for jj in range(self._y_num):
+                logodds = self._map[ii, jj]
+                if self.is_voxel_unknown((ii, jj)):
+                    data.append(-1)
+                else:
+                    p = self.LogOddsToProbability(logodds)
+                    data.append(int(100 * p))
+
+        msg.grid.data = data
+        return msg
 
     # Convert (x, y) coordinates in fixed frame to grid coordinates.
     def point_to_voxel(self, x, y):
@@ -372,8 +384,8 @@ class OccupancyGrid2d(object):
         """
         Merges two log-odds maps via element-wise addition.
         Args:
-            map1 (numpy.ndarray): First log-odds map.
-            map2 (numpy.ndarray): Second log-odds map.
+            map1 (OccupancyGrid2d): First log-odds map.
+            map2 (OccupancyGrid2d): Second log-odds map.
             clip_min (float): Minimum value to clip the result.
             clip_max (float): Maximum value to clip the result.
         Returns:# Merge current map with neighbor's map if needed
@@ -382,11 +394,10 @@ class OccupancyGrid2d(object):
         Raises: 
             ValueError if the shapes of the maps do not match.
         """
-        if map1.shape != map2.shape:
+        if map1._map.shape != map2._map.shape:
             raise ValueError("Map sizes do not match")
-        return np.clip(map1 + map2, clip_min, clip_max) # log odds are added together beacuse log rules, we are multiplying the probabilities
-
-
+        merged_data = np.clip(map1._map + map2._map, clip_min, clip_max) # log odds are added together beacuse log rules, we are multiplying the probabilities
+        return merged_data
 
     # Convert between probabity and log-odds.
     def ProbabilityToLogOdds(self, p):

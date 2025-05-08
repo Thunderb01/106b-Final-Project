@@ -1,0 +1,72 @@
+<launch xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- 1) Use simulated time -->
+  <param name="use_sim_time" value="true"/>
+
+  <!-- 2) Args -->
+  <arg name="num_bots" default="2"/>
+  <arg name="turtlebot3_model" default="burger"/>
+  <arg name="world_file"
+       default="$(find swarm_explorer)/worlds/swarm_world.world"/>
+
+  <!-- 3) Start Gazebo -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name"  value="$(arg world_file)"/>
+    <arg name="paused"      value="false"/>
+    <arg name="use_sim_time" value="true"/>
+    <arg name="verbose"     value="true"/>
+  </include>
+
+  <!-- 4) Spawn & bring up each TB3 -->
+  <xacro:property name="N"     value="${num_bots}"/>
+  <xacro:property name="MODEL" value="$(arg turtlebot3_model)"/>
+
+  <xacro:for each="i" count="${N}">
+    <!-- xacro:index() runs 0…N-1 -->
+    <xacro:property name="ID" value="${xacro:index()+1}"/>
+
+    <!-- 4a) load URDF -->
+    <param
+      command="$(find xacro)/xacro --inorder
+               '$(find turtlebot3_description)/urdf/turtlebot3_${MODEL}.urdf.xacro'
+               namespace:=/robot_${ID}"
+      name="/robot_${ID}/robot_description"/>
+
+    <!-- 4b) spawn in Gazebo -->
+    <node pkg="gazebo_ros" type="spawn_model" name="spawn_robot_${ID}"
+          args="-param robot_description_robot_${ID}
+                -urdf
+                -model robot_${ID}
+                -x $[2*${xacro:index()}] -y 0 -z 0.01
+                -Y 0
+                -robot_namespace /robot_${ID}"
+          output="screen"/>
+
+    <!-- 4c) TB3 bringup -->
+    <include file="$(find turtlebot3_bringup)/launch/robot_remote.launch">
+      <arg name="namespace"    value="robot_${ID}"/>
+      <arg name="use_sim_time" value="true"/>
+      <arg name="model"        value="${MODEL}"/>
+    </include>
+  </xacro:for>
+
+  <!-- 5) Start your relay
+  <include file="$(find swarm_explorer)/launch/swarm_relay.launch">
+    <arg name="comm_radius" value="5.0"/>
+  </include> -->
+
+  <!-- 6) Load swarm parameters -->
+  <rosparam file="$(find swarm_explorer)/config/swarm_params.yaml"
+            command="load"/>
+
+  <!-- 7) Loop in Xacro to launch each explorer_bot -->
+  <xacro:for each="i" count="${N}">
+    <xacro:property name="ID" value="${xacro:index()+1}"/>
+    <group ns="robot_${ID}">
+      <include file="$(find swarm_explorer)/launch/explorer_bot.launch">
+        <arg name="robot_id" value="${ID}"/>
+      </include>
+    </group>
+  </xacro:for>
+
+</launch>

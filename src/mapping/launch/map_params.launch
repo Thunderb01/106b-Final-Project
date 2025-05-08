@@ -31,7 +31,7 @@
   <arg name="random_downsample" default="0.1" />
 
   <!-- Mapper node. -->
-  <node name="mapper"
+  <node name="explorer_bot"
         pkg="mapping"
         type="mapping_node.py"
         output="screen">

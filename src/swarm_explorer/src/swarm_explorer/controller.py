@@ -4,9 +4,9 @@ import numpy as np
 import matplotlib
 import sys
 
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from swarm_explorer.src.utils import (
+from swarm_explorer.utils import (
     calc_euclidean_distance,
     wrap_angle,
 )
@@ -16,7 +16,7 @@ try:
     import tf2_ros
 
     from geometry_msgs.msg import Twist
-    from swarm_explorer.msg import ExplorerState
+    from swarm_explorer.msg import ExplorerStateMsg
 except ImportError:
     pass
 
@@ -26,7 +26,7 @@ class TurtlebotController(object):
         self,
         tb_id,
         # map_obj,
-        neighbor_states,
+        # neighbor_states,
         cohesion_radius,
         separation_radius,
         alignment_radius,
@@ -92,6 +92,9 @@ class TurtlebotController(object):
         """
         Calculate the flocking velocity based on the positions of the neighbors.
         """
+        if len(neighbor_states) == 0:
+            self.flock_vel = np.zeros(2)
+            return
         avg_cohesion_pos = self._calc_avg_pos_in_radius(
             neighbor_states, self.cohesion_radius
         )
@@ -144,6 +147,9 @@ class TurtlebotController(object):
         """
         Calculate the velocity towards the target position.
         """
+        if best_frontier is None:
+            self.frontier_vel = np.zeros(2)
+            return
         self.frontier_vel = (
             self.frontier_weight
             * (np.array(best_frontier.get_centroid()) - self.state[:2])
@@ -217,9 +223,12 @@ class TurtlebotController(object):
         self.integ_sum += error * dt
         integral = self.Ki @ self.integ_sum
         # Derivative term
-        error_deriv = (error - self.prev_error) / dt
+        if np.isclose(dt, 0.0):
+            derivative = np.zeros(2)
+        else:
+            error_deriv = (error - self.prev_error) / dt
+            derivative = self.Kd @ error_deriv
         self.prev_error = error
-        derivative = self.Kd @ error_deriv
         self.prev_time = curr_time
 
         control_input.linear.x = proportional[0] + derivative[0] + integral[0]
@@ -227,7 +236,7 @@ class TurtlebotController(object):
         self.cmd(control_input)
 
     def _calc_avg_pos_in_radius(
-        self, neighbor_states: Dict[int, ExplorerState], radius: float, use_actual=False
+        self, neighbor_states: Dict[int, ExplorerStateMsg], radius: float, use_actual=False
     ):
         """
         Calculate the average position of neighbors within a given radius using either actual states or calculated states.
@@ -264,7 +273,7 @@ class TurtlebotController(object):
             return np.zeros(2)
 
     def _calc_avg_flock_vel(
-        self, neighbor_states: Dict[int, ExplorerState], radius: float
+        self, neighbor_states: Dict[int, ExplorerStateMsg], radius: float
     ):
         """Calculate the average flock velocity of neighbors within a given radius."""
         velocities = np.array(

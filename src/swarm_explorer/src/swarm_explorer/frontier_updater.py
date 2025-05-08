@@ -4,8 +4,8 @@ Code for comparing the maps of the robots in the swarm.
 """
 import rospy
 import numpy as np
-from swarm_explorer.msg import ExplorerState
-from mapping.src.occupancy_grid_2d import OccupancyGrid2d
+from swarm_explorer.msg import ExplorerStateMsg
+from mapping.occupancy_grid_2d import OccupancyGrid2d
 
 class Frontier:
     def __init__(self):
@@ -74,11 +74,13 @@ class FrontierUpdater:
         Updates the frontiers of the robots in the swarm using neighbor's map data.
 
         Args:
-            neighbor_map: Map data from neighboring robots
+            current_position: The current position of the robot (x, y) in meters
         """
 
         # Convert position to voxel coordinates if needed
-        current_cell = self.occupancy_map.point_to_voxel(current_position)
+        current_cell = self.occupancy_map.point_to_voxel(
+            current_position[0], current_position[1]
+        )
         if current_cell is None:
             rospy.logerr("Current position is out of bounds.")
             return
@@ -141,7 +143,8 @@ class FrontierUpdater:
         Finds a complete frontier region starting from a frontier cell.
         Similar to the region growing algorithm mentioned in your pseudocode.
         """
-        region = []
+        region = Frontier()
+        region.add_cell(start_cell)  # Add the starting cell to the region
         queue = [start_cell]
         visited = set()
 
@@ -152,7 +155,7 @@ class FrontierUpdater:
                 continue
 
             visited.add(cell)
-            region.append(cell)
+            region.add_cell(cell)
 
             neighbors = map_data.get_voxel_neighbors(cell, connectivity=4)
 
@@ -172,7 +175,7 @@ class FrontierUpdater:
         Returns:
             Closest frontier region
         """
-        cell = self.occupancy_map.point_to_voxel(point)
+        cell = self.occupancy_map.point_to_voxel(point[0], point[1])
         closest_frontier = None
         min_cost = float("inf")
 

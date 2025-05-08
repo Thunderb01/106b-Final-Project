@@ -1,0 +1,72 @@
+<launch xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- 1) Use simulated time everywhere -->
+  <param name="use_sim_time" value="true"/>
+
+  <!-- 2) How many bots and which TB3 model? -->
+  <arg name="num_bots" default="2"/>
+  <arg name="turtlebot3_model" default="burger"/>
+
+  <!-- 3) Gazebo world -->
+  <arg name="world_file"
+       default="$(find swarm_explorer)/worlds/swarm_world.world"/>
+
+  <!-- 4) Launch Gazebo -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name"  value="$(arg world_file)"/>
+    <arg name="paused"      value="false"/>
+    <arg name="use_sim_time" value="true"/>
+    <arg name="verbose"     value="true"/>
+  </include>
+
+  <!-- 5) Spawn each TurtleBot3 -->
+  <xacro:for each="i" count="${num_bots}">
+    <xacro:property name="ID"    value="${xacro:index()+1}"/>
+    <xacro:property name="MODEL" value="${turtlebot3_model}"/>
+
+    <!-- 5a) Load URDF into parameter server for namespace -->
+    <param 
+      command="$(find xacro)/xacro --inorder 
+               '$(find turtlebot3_description)/urdf/turtlebot3_${MODEL}.urdf.xacro' 
+               namespace:=/robot_${ID}" 
+      name="/robot_${ID}/robot_description"/>
+
+    <!-- 5b) Spawn the model -->
+    <node pkg="gazebo_ros" type="spawn_model" name="spawn_robot_${ID}"
+          args="-param robot_description_robot_${ID}
+                -urdf
+                -model robot_${ID}
+                -x $[2*${xacro:index()}] -y 0 -z 0.01
+                -Y 0
+                -robot_namespace /robot_${ID}"
+          output="screen"/>
+    
+    <!-- 5c) Bring up TB3 ROS nodes under that namespace -->
+    <include file="$(find turtlebot3_bringup)/launch/robot_remote.launch">
+      <arg name="namespace"    value="robot_${ID}"/>
+      <arg name="use_sim_time" value="true"/>
+      <arg name="model"        value="$(arg MODEL)"/>
+    </include>
+  </xacro:for>
+
+  <!-- 6) Start your swarm_relay -->
+  <!-- <include file="$(find swarm_explorer)/launch/swarm_relay.launch">
+    <arg name="comm_radius" value="5.0"/>
+  </include> -->
+
+  <!-- 7) Load swarm parameters (initial_poses, radii, etc.) -->
+  <rosparam file="$(find swarm_explorer)/config/swarm_params.yaml"
+            command="load"/>
+
+  <!-- 8) Expand your explorers via Xacro -->
+  <node pkg="xacro" type="xacro" name="expand_explorers" args="
+      --inorder
+      -o $(find swarm_explorer)/tmp/generated_explorers_sim.launch
+      $(find swarm_explorer)/launch/explorers_template.xacro
+        num_bots:=$(arg num_bots)
+  "/>
+
+  <!-- 9) Launch all explorers (mapping + controller) -->
+  <include file="$(find swarm_explorer)/tmp/generated_explorers_sim.launch"/>
+
+</launch>

@@ -9,7 +9,7 @@ import sys
 import argparse
 import rospy
 
-from swarm_explorer.msg import ExplorerState
+from swarm_explorer.msg import ExplorerStateMsg
 
 
 def parse_args():

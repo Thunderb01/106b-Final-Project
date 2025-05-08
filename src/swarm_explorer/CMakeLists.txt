@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   std_srvs
+  nav_msgs
   tf
   tf2
   turtlesim
@@ -57,6 +58,7 @@ catkin_python_setup()
 add_message_files(
   FILES
   ExplorerStateMsg.msg
+  ExplorerMapMsg.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -79,6 +81,7 @@ generate_messages(
   geometry_msgs
   std_msgs
   std_srvs
+  nav_msgs
 )
 
 ################################################

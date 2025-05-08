@@ -4,6 +4,9 @@
     <node pkg="swarm_explorer" type="explorer_bot.py" 
         name="explorer_bot" output="screen">
       <param name="robot_id" value="$(arg robot_id)"/>
+
+      <!-- 1) Load the params in the YAML once -->
+      <rosparam file="$(find mapping)/config/mapping_params.yaml" command="load"/>
     </node>
   </group>
 </launch>

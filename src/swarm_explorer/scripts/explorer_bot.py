@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import rospy
 import numpy as np
 import matplotlib.pyplot as plt
@@ -43,24 +43,6 @@ class ExplorerBot:
         self.latest_map: OccupancyGrid2d = OccupancyGrid2d()
         self.latest_map.Initialize()
         self.neighbor_states: Dict[int, Odometry] = {}  # robot_id → Odometry
-
-        # publish static map→odom
-        br = tf2_ros.StaticTransformBroadcaster()
-        t = TransformStamped()
-        t.header.stamp = rospy.Time.now()
-        t.header.frame_id = "map"
-        t.child_frame_id = f"robot_{self.bot_id}/odom"
-        t.transform.translation.x = self.curr_state["x"]
-        t.transform.translation.y = self.curr_state["y"]
-        t.transform.translation.z = 0
-        quat = tf_conversions.transformations.quaternion_from_euler(
-            0, 0, self.curr_state["theta"]  # roll, pitch, yaw
-        )
-        t.transform.rotation.x = quat[0]
-        t.transform.rotation.y = quat[1]
-        t.transform.rotation.z = quat[2]
-        t.transform.rotation.w = quat[3]
-        br.sendTransform(t)
 
         # publishers and subscribers
         # self.pub_cmd = rospy.Publisher(self.cmd_topic, Twist, queue_size=1)
@@ -116,7 +98,7 @@ class ExplorerBot:
         poses: List[Dict[str, float]] = rospy.get_param(
             "/initial_poses"
         )  # list of dicts
-        self.curr_state: Dict[stro, float] = poses[self.bot_id - 1]
+        self.curr_state: Dict[str, float] = poses[self.bot_id - 1]
         self.curr_vel: Dict[str, float] = {"x_dot": 0, "y_dot": 0}
         self.curr_odom: Odometry = self._pose_to_odom(self.curr_state)  # type: Odometry
         # Communication parameters
@@ -186,8 +168,8 @@ class ExplorerBot:
         """
         odom = Odometry()
         odom.header.stamp = rospy.Time.now()
-        odom.header.frame_id = "map"
-        odom.child_frame_id = f"robot_{self.bot_id}/odom"
+        odom.header.frame_id = f"robot_{self.bot_id}/odom"
+        odom.child_frame_id = f"robot_{self.bot_id}/base_footprint"
         odom.pose.pose.position.x = pose["x"]
         odom.pose.pose.position.y = pose["y"]
         odom.pose.pose.position.z = 0
@@ -197,6 +179,7 @@ class ExplorerBot:
         odom.pose.pose.orientation.x = quat[0]
         odom.pose.pose.orientation.y = quat[1]
         odom.pose.pose.orientation.z = quat[2]
+        odom.pose.pose.orientation.w = quat[3]
         return odom
 
     def _odom_callback(self, msg: Odometry):

@@ -25,6 +25,7 @@
     <param 
       name="robot_description"
       command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro'"/>
+    <param name="tf_prefix" value="robot_1"/>
   </group>
   <node pkg="gazebo_ros" type="spawn_model" name="spawn_robot_1"
         args="-param /robot_1/robot_description 
@@ -75,6 +76,7 @@
     <param 
       name="robot_description"
       command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro'"/>
+    <param name="tf_prefix" value="robot_2"/>
   </group>
   <node pkg="gazebo_ros" type="spawn_model" name="spawn_robot_2"
         args="-param /robot_2/robot_description 
@@ -125,6 +127,7 @@
     <param 
       name="robot_description"
       command="$(find xacro)/xacro '$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro'"/>
+    <param name="tf_prefix" value="robot_3"/>
   </group>
   <node pkg="gazebo_ros" type="spawn_model" name="spawn_robot_3"
         args="-param /robot_3/robot_description 
@@ -132,7 +135,7 @@
               -model robot_3 
               -x 4 -y 0 -z 0.01 
               -robot_namespace /robot_3"/>
-  
+ 
   <rosparam ns="robot_3/diff_drive_controller">
     odom_frame_id:   'robot_3/odom'
     base_frame_id:   'robot_3/base_footprint'

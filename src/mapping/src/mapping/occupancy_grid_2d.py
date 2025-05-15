@@ -193,7 +193,6 @@ class OccupancyGrid2d(object):
             # Update log-odds at each voxel along the way.
             # Only update each voxel once.
             # The occupancy grid is stored in self._map
-            # TODO!
             x_final = sensor_x + r * np.cos(angle_fixed)
             y_final = sensor_y + r * np.sin(angle_fixed)
    
@@ -219,6 +218,16 @@ class OccupancyGrid2d(object):
 
         # Visualize.
         self.visualize()
+
+    def is_fully_known(self):
+        """
+        Check if the map is fully known.
+        Returns:
+            bool: True if there are no unknown cells in the map, False otherwise.
+        """
+        # A cell is unknown if its log-odds value is between free_threshold and occupied_threshold
+        unknown_mask = (self._map >= self._free_threshold) & (self._map <= self._occupied_threshold)
+        return not np.any(unknown_mask)
     
     def to_msg(self):
         """

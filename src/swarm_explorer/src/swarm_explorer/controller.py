@@ -3,6 +3,7 @@ from typing import Dict, Tuple
 import numpy as np
 import matplotlib
 import sys
+import tf_conversions
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -235,6 +236,36 @@ class TurtlebotController(object):
         control_input.angular.z = proportional[1] + derivative[1] + integral[1]
         self.cmd(control_input)
 
+        # Log states for plotting
+        self.times.append(curr_time)
+        # Log actual state (x, y, theta)
+        self.actual_states.append([
+            curr_odom.pose.pose.position.x,
+            curr_odom.pose.pose.position.y,
+            tf_conversions.transformations.euler_from_quaternion([
+                curr_odom.pose.pose.orientation.x,
+                curr_odom.pose.pose.orientation.y,
+                curr_odom.pose.pose.orientation.z,
+                curr_odom.pose.pose.orientation.w
+            ])[2]  # Get yaw from quaternion
+        ])
+        # Log target state (x, y, theta)
+        self.target_states.append([
+            self.state[0],  # x
+            self.state[1],  # y
+            self.state[2]   # theta
+        ])
+        # Log actual velocities (linear, angular)
+        self.actual_velocities.append([
+            curr_odom.twist.twist.linear.x,
+            curr_odom.twist.twist.angular.z
+        ])
+        # Log target velocities (linear, angular)
+        self.target_velocities.append([
+            target_state[0],  # linear
+            target_state[1]   # angular
+        ])
+
     def _calc_avg_pos_in_radius(
         self, neighbor_states: Dict[int, ExplorerStateMsg], radius: float, use_actual=False
     ):
@@ -325,6 +356,10 @@ class TurtlebotController(object):
         target_velocities: nx2 :obj:`numpy.ndarray`
             target velocities for each time in times
         """
+        # Check if we have any data to plot
+        if not self.times or not self.actual_states:
+            rospy.logwarn("No data to plot")
+            return
 
         # Make everything an ndarray
         times = np.array(self.times)
@@ -340,14 +375,14 @@ class TurtlebotController(object):
             plt.plot(times, actual_states[:, i], label="Actual")
             plt.plot(times, target_states[:, i], label="Desired")
             plt.xlabel("Time (t)")
-            plt.ylabel(states[state] + " State Error")
+            plt.ylabel(state + " State Error")
             plt.legend()
 
-            plt.subplot(i, 2, 2 * i + 2)
+            plt.subplot(len(states), 2, 2 * i + 2)
             plt.plot(times, actual_velocities[:, i], label="Actual")
             plt.plot(times, target_velocities[:, i], label="Desired")
             plt.xlabel("Time (t)")
-            plt.ylabel(states[i] + " Velocity Error")
+            plt.ylabel(state + " Velocity Error")
             plt.legend()
 
         plt.show()

@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import tf2_ros
 from geometry_msgs.msg import TransformStamped, Twist
 import tf_conversions
+import signal
+import sys
 
 from mapping.occupancy_grid_2d import OccupancyGrid2d
 from nav_msgs.msg import OccupancyGrid
@@ -65,8 +67,8 @@ class ExplorerBot:
             frontier_size_wt=self.frontier_size_wt,
         )
         
-        Kp = np.diag([2.0, 0.8])
-        Kd = np.diag([-0.5, 0.5])
+        Kp = np.diag([2.0, 0.4])
+        Kd = np.diag([-0.5, 0.2])
         Ki = np.diag([0.0, 0.0])
 
         self.controller = TurtlebotController(
@@ -87,6 +89,10 @@ class ExplorerBot:
             Kd=Kd,
             Ki=Ki,
         )
+
+        # Set up signal handler
+        signal.signal(signal.SIGINT, self.signal_handler)
+        self.should_exit = False
 
     def initialize_params(self):
         """
@@ -143,7 +149,6 @@ class ExplorerBot:
         )
 
         # self.map_type: str = rospy.get_param("~map_type")  # either occupancy or slam
-
 
     def _map_callback(self, msg: ExplorerMapMsg):
         """
@@ -222,6 +227,12 @@ class ExplorerBot:
             rospy.logerr("Failed to get current pose from TF")
             return None
 
+    def signal_handler(self, sig, frame):
+        """Handle Ctrl+C gracefully"""
+        rospy.loginfo("Shutdown signal received. Plotting results and exiting...")
+        self.should_exit = True
+        self.controller.plot_results()
+        rospy.signal_shutdown("User requested shutdown")
 
     def run(self):
         rate = rospy.Rate(10)  # 10 Hz control loop
@@ -232,7 +243,7 @@ class ExplorerBot:
         target_velocities = []
         times = []
         # Main loop
-        while not rospy.is_shutdown() or not self.frontier_updater.map_fully_known():
+        while not rospy.is_shutdown() and not self.should_exit and not self.frontier_updater.map_fully_known():
             # Process the latest map and neighbor states
             if self.latest_map is None:
                 # Process the map data
@@ -282,9 +293,12 @@ class ExplorerBot:
 
             rate.sleep()
 
+        # If we exit the loop normally (map fully known), plot results
+        if self.frontier_updater.map_fully_known():
+            rospy.loginfo("Map fully explored! Plotting results...")
+            self.controller.plot_results()
+
 
 if __name__ == "__main__":
     bot = ExplorerBot()
     bot.run()
-
-    bot.controller.plot_results()

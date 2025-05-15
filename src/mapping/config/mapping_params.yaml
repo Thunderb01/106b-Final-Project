@@ -1,6 +1,6 @@
 ---
 frames:
-  fixed: odom
+  fixed: map
   sensor: base_link
 
 topics:

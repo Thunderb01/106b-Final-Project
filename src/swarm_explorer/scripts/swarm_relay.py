@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import rospy
 from swarm_explorer.msg import ExplorerStateMsg, ExplorerMapMsg
 import numpy as np
@@ -45,9 +45,9 @@ class SwarmRelay(object):
                 continue
 
             # lazy‐create publisher
-            if robot_id not in self.pubs:
+            if robot_id not in self.state_pubs:
                 topic = f"/robot_{robot_id}/incoming/state"  # TODO: change topic name
-                self.pubs[robot_id] = rospy.Publisher(
+                self.state_pubs[robot_id] = rospy.Publisher(
                     topic, ExplorerStateMsg, queue_size=1
                 )
             self.state_pubs[robot_id].publish(msg)
@@ -65,9 +65,9 @@ class SwarmRelay(object):
                 continue
 
             # lazy‐create publisher
-            if robot_id not in self.pubs:
+            if robot_id not in self.map_pubs:
                 topic = f"/robot_{robot_id}/incoming/map"  # TODO: change topic name
-                self.pubs[robot_id] = rospy.Publisher(
+                self.map_pubs[robot_id] = rospy.Publisher(
                     topic, ExplorerMapMsg, queue_size=1
                 )
             self.map_pubs[robot_id].publish(msg)
@@ -85,7 +85,9 @@ class SwarmRelay(object):
         Shutdown the node.
         """
         rospy.loginfo("Shutting down swarm relay node")
-        for pub in self.pubs.values():
+        for pub in self.state_pubs.values():
+            pub.unregister()
+        for pub in self.map_pubs.values():
             pub.unregister()
         rospy.signal_shutdown("Swarm relay node shut down")
 

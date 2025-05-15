@@ -205,6 +205,12 @@ class FrontierUpdater:
 
         return self.get_closest_frontier(cell)
 
+    def map_fully_known(self):
+        """
+        Check if the map is fully known.
+        """
+        return self.occupancy_map.is_fully_known()
+
     # Helper methods
 
     def filter_frontiers(self):

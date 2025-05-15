@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib
 import sys
 import tf_conversions
+import os
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -41,6 +42,7 @@ class TurtlebotController(object):
         Kp,
         Kd,
         Ki,
+        env_config,
     ):
         """
         Executes a plan made by the planner
@@ -81,32 +83,45 @@ class TurtlebotController(object):
         self.prev_error = np.zeros(2)  # (x, y, theta)
         self.integral = np.zeros(2)
         self.length = 0.3
+        self.env_config = env_config
+        
+        # Initialize plotting variables
+        self.actual_positions = []
+        self.actual_velocities = []
+        self.target_positions = []
+        self.target_velocities = []
+        self.times = []
+        self.start_time = rospy.Time.now()
 
-        # Plotting variables
-        self.times = []  # Time stamps for plotting
-        self.actual_states = []  # (x, y, theta)
-        self.target_states = []  # (x, y, theta)
-        self.actual_velocities = []  # (linear, angular)
-        self.target_velocities = []  # (linear, angular)
-
-    def calc_flock_vel(self, latest_map, neighbor_states):
+    def _calc_flock_vel(self, latest_map, neighbor_states):
         """
         Calculate the flocking velocity based on the positions of the neighbors.
         """
         if len(neighbor_states) == 0:
             self.flock_vel = np.zeros(2)
             return
+        
+        # Cohesion velocity
         avg_cohesion_pos = self._calc_avg_pos_in_radius(
             neighbor_states, self.cohesion_radius
         )
         self.cohesion_vel = avg_cohesion_pos - self.state[:2]
+        self.cohesion_vel = self.cohesion_vel / np.linalg.norm(self.cohesion_vel)
+
+        # Separation velocity
         avg_sep_pos = self._calc_avg_pos_in_radius(
             neighbor_states, self.separation_radius
         )
         self.separation_vel = self.state[:2] - avg_sep_pos
+        self.separation_vel = self.separation_vel / np.linalg.norm(self.separation_vel)
+
+        # Alignment velocity
         self.alignment_vel = self._calc_avg_flock_vel(
             neighbor_states, self.alignment_radius
         )
+        self.alignment_vel = self.alignment_vel / np.linalg.norm(self.alignment_vel)
+
+        # Wall velocity
         x_min, x_max, y_min, y_max = latest_map.get_limits()
         self.wall_vel = np.array(
             [
@@ -114,20 +129,23 @@ class TurtlebotController(object):
                 -1 if self.state[1] < y_min else 1 if self.state[1] > y_max else 0,
             ]
         )
+        self.wall_vel = self.wall_vel / np.linalg.norm(self.wall_vel)
 
+        # Obstacle velocity
         surrounding_obstacles = latest_map.get_surrounding_obstacles(
             self.state[:2], self.collision_radius, is_point=True
         )
         obstacle_pos, obstacle_dist = (
             surrounding_obstacles[0] if len(surrounding_obstacles) > 0 else (None, 0)
         )
-
         if obstacle_pos is not None:
             self.obstacle_vel = np.array(
                 [self.state[0] - obstacle_pos[0], self.state[1] - obstacle_pos[1]]
             )
+            self.obstacle_vel = self.obstacle_vel / np.linalg.norm(self.obstacle_vel)
         else:
             self.obstacle_vel = np.zeros(2)
+            self.obstacle_weight = 0.0
 
         dynamic_scale = (self.collision_radius - obstacle_dist) / self.cohesion_radius
         self.obstacle_weight *= dynamic_scale
@@ -144,7 +162,7 @@ class TurtlebotController(object):
             + self.obstacle_weight * self.obstacle_vel
         )  # (x_dot, y_dot)
 
-    def calc_frontier_vel(self, best_frontier):
+    def _calc_frontier_vel(self, best_frontier):
         """
         Calculate the velocity towards the target position.
         """
@@ -174,18 +192,33 @@ class TurtlebotController(object):
         """
         # Update the robot's velocities
         self.state = curr_state
-        self.calc_flock_vel(latest_map=latest_map, neighbor_states=neighbor_states)
-        self.calc_frontier_vel(best_frontier=best_frontier)
+        self._calc_flock_vel(latest_map=latest_map, neighbor_states=neighbor_states)
+        self._calc_frontier_vel(best_frontier=best_frontier)
         target_vel = self.flock_vel + self.frontier_vel  # (x_dot, y_dot)
+        
+        # Normalize target velocity to unit vector
+        target_vel_mag = np.linalg.norm(target_vel)
+        if target_vel_mag > 0:
+            target_vel = target_vel / target_vel_mag
+            
+        # Scale to maximum allowed velocity
+        target_vel = target_vel * self.env_config.max_linear_vel
+        
         target_theta = np.arctan2(target_vel[1], target_vel[0])
         theta_dot = wrap_angle(target_theta - self.state[2])
         self.state[:2] += target_vel
         self.state[2] = target_theta
         self.state_dot[:2] = target_vel
         self.state[2] = theta_dot
+        
+        # Calculate reference velocities with normalized linear velocity
         ref_velocities: np.ndarray = np.array(
             [np.linalg.norm(target_vel), self.angular_gain * theta_dot]
         )  # (linear, angular)
+        
+        # Clip velocities to ensure they stay within limits
+        ref_velocities = self.env_config.clip_velocity(ref_velocities)
+        
         return ref_velocities
 
     def step_control(self, target_state, curr_odom):
@@ -212,8 +245,6 @@ class TurtlebotController(object):
                 curr_odom.twist.twist.angular.z,
             ]
         )
-        # x_error = target_state[0] - actual_state[0]
-        # theta_error = target_state[1] - actual_state[1]
         error = target_state - actual_state
 
         # Proportional term
@@ -236,35 +267,21 @@ class TurtlebotController(object):
         control_input.angular.z = proportional[1] + derivative[1] + integral[1]
         self.cmd(control_input)
 
-        # Log states for plotting
-        self.times.append(curr_time)
-        # Log actual state (x, y, theta)
-        self.actual_states.append([
-            curr_odom.pose.pose.position.x,
-            curr_odom.pose.pose.position.y,
-            tf_conversions.transformations.euler_from_quaternion([
-                curr_odom.pose.pose.orientation.x,
-                curr_odom.pose.pose.orientation.y,
-                curr_odom.pose.pose.orientation.z,
-                curr_odom.pose.pose.orientation.w
-            ])[2]  # Get yaw from quaternion
-        ])
-        # Log target state (x, y, theta)
-        self.target_states.append([
-            self.state[0],  # x
-            self.state[1],  # y
-            self.state[2]   # theta
-        ])
-        # Log actual velocities (linear, angular)
-        self.actual_velocities.append([
-            curr_odom.twist.twist.linear.x,
-            curr_odom.twist.twist.angular.z
-        ])
-        # Log target velocities (linear, angular)
-        self.target_velocities.append([
-            target_state[0],  # linear
-            target_state[1]   # angular
-        ])
+        # Update plotting variables
+        current_time = (rospy.Time.now() - self.start_time).to_sec()
+        self.times.append(current_time)
+        
+        # Get current position and velocity
+        curr_pos = np.array([curr_odom.pose.pose.position.x, curr_odom.pose.pose.position.y])
+        curr_vel = np.array([curr_odom.twist.twist.linear.x, curr_odom.twist.twist.angular.z])
+        
+        # Get target velocity (target_state is already in [linear, angular] format)
+        target_vel = target_state
+        
+        # Store for plotting
+        self.actual_positions.append(curr_pos)
+        self.actual_velocities.append(curr_vel)
+        self.target_velocities.append(target_vel)
 
     def _calc_avg_pos_in_radius(
         self, neighbor_states: Dict[int, ExplorerStateMsg], radius: float, use_actual=False
@@ -343,46 +360,73 @@ class TurtlebotController(object):
         self.cmd(Twist())
 
     def plot_results(self):
-        """
-        Plots results.
-
-        times : nx' :obj:`numpy.ndarray`
-        actual_states : nx2 :obj:`numpy.ndarray`
-            actual positions for each time in times
-        actual_velocities: nx2 :obj:`numpy.ndarray`
-            actual velocities for each time in times
-        target_states: nx2 :obj:`numpy.ndarray`
-            target positions for each time in times
-        target_velocities: nx2 :obj:`numpy.ndarray`
-            target velocities for each time in times
-        """
-        # Check if we have any data to plot
-        if not self.times or not self.actual_states:
-            rospy.logwarn("No data to plot")
+        """Plot the results of the control loop."""
+        if not self.actual_positions:  # If no data was collected
+            rospy.logwarn("No data to plot!")
             return
 
-        # Make everything an ndarray
-        times = np.array(self.times)
-        actual_states = np.array(self.actual_states)
+        rospy.loginfo(f"Plotting results for robot {self.tb_id}")
+        rospy.loginfo(f"Number of data points: {len(self.actual_positions)}")
+
+        # Convert lists to numpy arrays
+        actual_positions = np.array(self.actual_positions)
         actual_velocities = np.array(self.actual_velocities)
-        target_states = np.array(self.target_states)
         target_velocities = np.array(self.target_velocities)
+        times = np.array(self.times)
 
-        plt.figure()
-        states = ("x", "y", "theta")
-        for i, state in enumerate(states):
-            plt.subplot(len(states), 2, 2 * i + 1)
-            plt.plot(times, actual_states[:, i], label="Actual")
-            plt.plot(times, target_states[:, i], label="Desired")
-            plt.xlabel("Time (t)")
-            plt.ylabel(state + " State Error")
-            plt.legend()
+        rospy.loginfo(f"Data shapes - positions: {actual_positions.shape}, velocities: {actual_velocities.shape}, times: {times.shape}")
 
-            plt.subplot(len(states), 2, 2 * i + 2)
-            plt.plot(times, actual_velocities[:, i], label="Actual")
-            plt.plot(times, target_velocities[:, i], label="Desired")
-            plt.xlabel("Time (t)")
-            plt.ylabel(state + " Velocity Error")
-            plt.legend()
+        # Create figure with subplots
+        fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+        fig.suptitle(f'Robot {self.tb_id} Control Results')
 
-        plt.show()
+        # Position plot
+        axs[0, 0].plot(actual_positions[:, 0], actual_positions[:, 1], 'b-', label='Actual')
+        axs[0, 0].set_title('Position')
+        axs[0, 0].set_xlabel('X (m)')
+        axs[0, 0].set_ylabel('Y (m)')
+        axs[0, 0].legend()
+        axs[0, 0].grid(True)
+
+        # Linear velocity plot
+        axs[0, 1].plot(times, actual_velocities[:, 0], 'b-', label='Actual')
+        axs[0, 1].plot(times, target_velocities[:, 0], 'r--', label='Target')
+        axs[0, 1].set_title('Linear Velocity')
+        axs[0, 1].set_xlabel('Time (s)')
+        axs[0, 1].set_ylabel('Velocity (m/s)')
+        axs[0, 1].legend()
+        axs[0, 1].grid(True)
+
+        # Angular velocity plot
+        axs[1, 0].plot(times, actual_velocities[:, 1], 'b-', label='Actual')
+        axs[1, 0].plot(times, target_velocities[:, 1], 'r--', label='Target')
+        axs[1, 0].set_title('Angular Velocity')
+        axs[1, 0].set_xlabel('Time (s)')
+        axs[1, 0].set_ylabel('Velocity (rad/s)')
+        axs[1, 0].legend()
+        axs[1, 0].grid(True)
+
+        # Velocity magnitude plot
+        actual_vel_mag = np.linalg.norm(actual_velocities, axis=1)
+        target_vel_mag = np.linalg.norm(target_velocities, axis=1)
+        axs[1, 1].plot(times, actual_vel_mag, 'b-', label='Actual')
+        axs[1, 1].plot(times, target_vel_mag, 'r--', label='Target')
+        axs[1, 1].set_title('Velocity Magnitude')
+        axs[1, 1].set_xlabel('Time (s)')
+        axs[1, 1].set_ylabel('Magnitude')
+        axs[1, 1].legend()
+        axs[1, 1].grid(True)
+
+        # Adjust layout and save
+        plt.tight_layout()
+        
+        # Create plots directory at the same level as src
+        src_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        plots_dir = os.path.join(os.path.dirname(src_dir), 'plots')
+        os.makedirs(plots_dir, exist_ok=True)
+        
+        # Save plot with absolute path
+        save_path = os.path.join(plots_dir, f'robot_{self.tb_id}_control_results.png')
+        plt.savefig(save_path)
+        rospy.loginfo(f"Plot saved to {save_path}")
+        plt.close()

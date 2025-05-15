@@ -178,6 +178,7 @@
 
   <!--  8) Load swarm parameters  -->
   <rosparam file="$(find swarm_explorer)/config/swarm_params.yaml" command="load"/>
+  <rosparam file="$(find swarm_explorer)/config/env_config.yaml" command="load"/>
 
   <!--  9) Launch each explorer_bot  -->
   <group ns="robot_1">

@@ -14,6 +14,7 @@ from nav_msgs.msg import Odometry
 from swarm_explorer.msg import ExplorerStateMsg, ExplorerMapMsg
 from swarm_explorer.frontier_updater import FrontierUpdater
 from swarm_explorer.controller import TurtlebotController
+from swarm_explorer.env_config import EnvConfig
 from typing import Dict, List
 
 
@@ -66,6 +67,9 @@ class ExplorerBot:
             frontier_dist_wt=self.frontier_dist_wt,
             frontier_size_wt=self.frontier_size_wt,
         )
+
+        # Load environment configurations from parameter server (done within the class)
+        self.env_config = EnvConfig()
         
         Kp = np.diag([2.0, 0.4])
         Kd = np.diag([-0.5, 0.2])
@@ -88,6 +92,7 @@ class ExplorerBot:
             Kp=Kp,
             Kd=Kd,
             Ki=Ki,
+            env_config=self.env_config,
         )
 
         # Set up signal handler

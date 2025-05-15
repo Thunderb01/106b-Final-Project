@@ -1,0 +1,40 @@
+# Environment Configuration
+env:
+  # Map settings
+  map_resolution: 0.05  # meters per pixel
+  map_width: 100       # pixels
+  map_height: 100      # pixels
+  map_origin_x: -2.5   # meters
+  map_origin_y: -2.5   # meters
+
+  # Robot motion limits
+  max_linear_vel: 0.22  # m/s
+  max_angular_vel: 2.84 # rad/s
+  max_linear_acc: 0.5   # m/s^2
+  max_angular_acc: 3.2  # rad/s^2
+
+  # Robot dimensions
+  robot_radius: 0.1    # meters
+  robot_length: 0.3    # meters
+
+  # Flocking parameters
+  cohesion_radius: 1.0  # meters
+  separation_radius: 0.5 # meters
+  alignment_radius: 1.0  # meters
+  collision_radius: 0.5  # meters
+
+  # Weights for different behaviors
+  cohesion_weight: 0.23
+  separation_weight: 1.1
+  alignment_weight: 0.5
+  obstacle_weight: 1.1
+  wall_weight: 1.1
+  frontier_weight: 0.08
+
+  # Frontier parameters
+  frontier_dist_wt: 0.001
+  frontier_size_wt: 1.0
+
+  # Communication parameters
+  comm_radius: 5.0     # meters
+  max_neighbor_age: 0.5 # seconds 

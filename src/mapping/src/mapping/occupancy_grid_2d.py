@@ -167,11 +167,11 @@ class OccupancyGrid2d(object):
         if abs(roll) > 0.1 or abs(pitch) > 0.1:
             rospy.logwarn("%s: Turtlebot roll/pitch is too large.", self._name)
         
-        try:
-            tframe = self._tf_buffer.lookup_transform("map", self.sensor_frame, rospy.Time(0), rospy.Duration(0.1))
-            rospy.loginfo(f"[{rospy.get_name()}] TF translation: {tframe.transform.translation}")
-        except Exception as e:
-            rospy.logwarn(f"TF lookup failed: {e}")
+        # try:
+        #     tframe = self._tf_buffer.lookup_transform("map", self.sensor_frame, rospy.Time(0), rospy.Duration(0.1))
+        #     rospy.loginfo(f"[{rospy.get_name()}] TF translation: {tframe.transform.translation}")
+        # except Exception as e:
+        #     rospy.logwarn(f"TF lookup failed: {e}")
 
         # Loop over all ranges in the LaserScan.
         for idx, r in enumerate(msg.ranges):
@@ -237,6 +237,7 @@ class OccupancyGrid2d(object):
             bool: True if there are no unknown cells in the map, False otherwise.
         """
         # A cell is unknown if its log-odds value is between free_threshold and occupied_threshold
+        return False # TODO: we aint there yet 
         unknown_mask = (self._map >= self._free_threshold) & (self._map <= self._occupied_threshold)
         return not np.any(unknown_mask)
     
@@ -349,15 +350,14 @@ class OccupancyGrid2d(object):
             List of obstacle voxel indices and distances (tuples: (voxel, distance))
         """
         voxel = self.point_to_voxel(position[0], position[1])
-        rospy.loginfo(f"voxel: {voxel}")
-        rospy.loginfo(f"position: {position}")
+        # rospy.loginfo(f"voxel: {voxel}")
+        # rospy.loginfo(f"position: {position}")
 
 
         ii, jj = voxel
         obstacles = []
         # TODO: this only works for equal x_res and y_res
-        radius = int(radius * self._x_res)  # Adjust radius based on resolution
-        rospy.loginfo(f"radius: {radius}")
+        radius = int(radius / self._x_res)  # Adjust radius based on resolution
 
         for dx in range(-radius, radius + 1):
             for dy in range(-radius, radius + 1):
@@ -373,7 +373,7 @@ class OccupancyGrid2d(object):
         obstacles.sort(key=lambda x: x[1])
 
         # Return only the voxel indices, not the distances
-        return obstacles if not is_point else [(self.get_voxel_center(vox), dist) for vox, dist in obstacles]
+        return obstacles if not is_point else [(self.get_voxel_center(*vox), dist) for vox, dist in obstacles]
     
     def is_voxel_free(self, voxel):
         """

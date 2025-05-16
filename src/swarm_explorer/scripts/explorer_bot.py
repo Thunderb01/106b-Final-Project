@@ -114,44 +114,44 @@ class ExplorerBot:
         self.curr_vel: Dict[str, float] = {"x_dot": 0, "y_dot": 0}
         self.curr_odom: Odometry = self._pose_to_odom(self.curr_state)  # type: Odometry
         # Communication parameters
-        self.comm_radius: float = rospy.get_param("~comm_radius", 5.0)  # meters
+        self.comm_radius: float = rospy.get_param("/comm_radius")  # meters
         self.max_neighbor_age: float = rospy.get_param(
-            "~max_neighbor_age", 0.5
+            "/max_neighbor_age"
         )  # seconds
         # Algorithm radii
-        self.cohesion_radius: float = rospy.get_param("~cohesion_radius", 1.0)  # meters
+        self.cohesion_radius: float = rospy.get_param("/cohesion_radius")  # meters
         self.separation_radius: float = rospy.get_param(
-            "~separation_radius", 0.5
+            "/separation_radius"
         )
         self.alignment_radius: float = rospy.get_param(
-            "~alignment_radius", 1.0
+            "/alignment_radius"
         )
         self.collision_radius: float = rospy.get_param(
-            "~collision_radius", 0.5
+            "/collision_radius"
         )
         # Algorithm weights
         self.cohesion_weight: float = rospy.get_param(
-            "~cohesion_weight", 0.23
+            "/cohesion_weight"
         )
         self.separation_weight: float = rospy.get_param(
-            "~separation_weight", 1.1
+            "/separation_weight"
         )
         self.alignment_weight: float = rospy.get_param(
-            "~alignment_weight", 0.5
+            "/alignment_weight"
         )
         self.obstacle_weight: float = rospy.get_param(
-            "~obstacle_weight", 1.1
+            "/obstacle_weight"
         )
-        self.wall_weight: float = rospy.get_param("~wall_weight", 1.1)
+        self.wall_weight: float = rospy.get_param("/wall_weight")
         self.frontier_weight: float = rospy.get_param(
-            "~frontier_weight", 0.08
+            "/frontier_weight"
         )
         # Frontier parameters
         self.frontier_dist_wt: float = rospy.get_param(
-            "~frontier_dist_wt", 0.001
+            "/frontier_dist_weight"
         )
         self.frontier_size_wt: float = rospy.get_param(
-            "~frontier_size_wt", 1.0
+            "/frontier_size_weight"
         )
 
         # self.map_type: str = rospy.get_param("~map_type")  # either occupancy or slam

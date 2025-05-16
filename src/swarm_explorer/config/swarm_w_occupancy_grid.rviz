@@ -9,6 +9,7 @@ Panels:
         - /TF1
         - /Marker1
         - /Marker2
+        - /Marker3
       Splitter Ratio: 0.5
     Tree Height: 543
   - Class: rviz/Selection
@@ -392,21 +393,29 @@ Visualization Manager:
       Use rainbow: true
       Value: true
     - Class: rviz/Marker
-      Enabled: true
+      Enabled: false
       Marker Topic: /robot_1/vis/map
       Name: Marker
       Namespaces:
-        map: true
+        {}
       Queue Size: 100
-      Value: true
+      Value: false
     - Class: rviz/Marker
-      Enabled: true
+      Enabled: false
       Marker Topic: /robot_2/vis/map
       Name: Marker
       Namespaces:
-        map: true
+        {}
       Queue Size: 100
-      Value: true
+      Value: false
+    - Class: rviz/Marker
+      Enabled: false
+      Marker Topic: /robot_3/vis/map
+      Name: Marker
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -435,7 +444,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 43.63492965698242
+      Distance: 29.73598289489746
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -471,5 +480,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1200
-  X: 64
-  Y: 33
+  X: 444
+  Y: 192

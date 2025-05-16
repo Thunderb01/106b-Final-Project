@@ -154,25 +154,29 @@ class TurtlebotController(object):
             self.separation_vel = np.zeros(2)
             self.alignment_vel = np.zeros(2)
         else:    
-            # Cohesion velocity
+            # TODO: see if we need to normalize the velocities
+            # Cohesion velocity 
             avg_cohesion_pos = self._calc_avg_pos_in_radius(
                 neighbor_states, self.cohesion_radius
             )
             self.cohesion_vel = avg_cohesion_pos - self.state[:2]
-            self.cohesion_vel = self.cohesion_vel / np.linalg.norm(self.cohesion_vel)
+            if np.linalg.norm(self.cohesion_vel) > 0:
+                self.cohesion_vel = self.cohesion_vel / np.linalg.norm(self.cohesion_vel)
 
             # Separation velocity
             avg_sep_pos = self._calc_avg_pos_in_radius(
                 neighbor_states, self.separation_radius
             )
             self.separation_vel = self.state[:2] - avg_sep_pos
-            self.separation_vel = self.separation_vel / np.linalg.norm(self.separation_vel)
+            if np.linalg.norm(self.separation_vel) > 0:
+                self.separation_vel = self.separation_vel / np.linalg.norm(self.separation_vel)
 
             # Alignment velocity
             self.alignment_vel = self._calc_avg_flock_vel(
                 neighbor_states, self.alignment_radius
             )
-            self.alignment_vel = self.alignment_vel / np.linalg.norm(self.alignment_vel)
+            if np.linalg.norm(self.alignment_vel) > 0:
+                self.alignment_vel = self.alignment_vel / np.linalg.norm(self.alignment_vel)
 
         dynamic_scale = (self.collision_radius - obstacle_dist) / self.cohesion_radius
         self.obstacle_weight *= dynamic_scale

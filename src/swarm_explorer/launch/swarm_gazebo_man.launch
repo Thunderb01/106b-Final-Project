@@ -27,9 +27,9 @@
   <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom_1" 
         args="0 0 0 0 0 0 map robot_1/odom"/>
   <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom_2" 
-        args="2 0 0 0 0 0 map robot_2/odom"/>
+        args="0 0 0 0 0 0 map robot_2/odom"/>
   <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom_3" 
-        args="4 0 0 0 0 0 map robot_3/odom"/>
+        args="0 0 0 0 0 0 map robot_3/odom"/>
 
   <!--  4) Spawn TurtleBot3 #1  -->
   <group ns="robot_1">
@@ -211,14 +211,14 @@
     <!-- Launch Occupancy Grid Mappers -->
     <!-- Occupancy grid mapper for robot_1 -->
   <group ns="robot_1">
-    <node name="mapping_node_1"
+    <node name="mapping_node"
           pkg="mapping"
           type="mapping_node.py"
           output="screen"
           args="diff_drive_controller"
           launch-prefix="bash -c 'sleep 3; $0 $@'">
 
-      <param name="frames/fixed" value="map" />
+      <param name="frames/fixed" value="robot_1/odom" />
       <param name="frames/sensor" value="robot_1/base_scan" />
 
       <param name="topics/vis" value="/robot_1/vis/map" />
@@ -242,14 +242,14 @@
 
       <!-- Occupancy grid mapper for robot_1 -->
   <group ns="robot_2">
-    <node name="mapping_node_2"
+    <node name="mapping_node"
           pkg="mapping"
           type="mapping_node.py"
           output="screen"
           args="diff_drive_controller"
           launch-prefix="bash -c 'sleep 3; $0 $@'">
 
-      <param name="frames/fixed" value="map" />
+      <param name="frames/fixed" value="robot_2/odom" />
       <param name="frames/sensor" value="robot_2/base_scan" />
 
       <param name="topics/vis" value="/robot_2/vis/map" />
@@ -273,14 +273,14 @@
 
       <!-- Occupancy grid mapper for robot_1 -->
   <group ns="robot_3">
-    <node name="mapping_node_3"
+    <node name="mapping_node"
           pkg="mapping"
           type="mapping_node.py"
           output="screen"
           args="diff_drive_controller"
           launch-prefix="bash -c 'sleep 3; $0 $@'">
 
-      <param name="frames/fixed" value="map" />
+      <param name="frames/fixed" value="robot_3/odom" />
       <param name="frames/sensor" value="robot_3/base_scan" />
 
       <param name="topics/vis" value="/robot_3/vis/map" />

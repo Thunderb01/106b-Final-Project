@@ -210,10 +210,18 @@ class OccupancyGrid2d(object):
           
                 
             voxel_final = self.point_to_voxel(x_final, y_final)
-            self._map[voxel_final] = min(self._map[voxel_final] + self._occupied_update, self._occupied_threshold)
-            for voxel in voxels:
-                if voxel != voxel_final:
-                    self._map[voxel] = max(self._map[voxel] + self._free_update, self._free_threshold)
+            print("voxel_final", voxel_final)
+            print(self._x_num, self._y_num)
+            print(self._map)
+            if voxel_final[0] > self._x_num or voxel_final[1] > self._y_num:
+                print("voxel_final out of bounds")
+                continue
+            else:
+                # Update the log-odds value at the final voxel.
+                self._map[voxel_final] = min(self._map[voxel_final] + self._occupied_update, self._occupied_threshold)
+                for voxel in voxels:
+                    if voxel != voxel_final:
+                        self._map[voxel] = max(self._map[voxel] + self._free_update, self._free_threshold)
                 
 
         # Visualize.

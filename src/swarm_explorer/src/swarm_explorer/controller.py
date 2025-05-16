@@ -122,14 +122,44 @@ class TurtlebotController(object):
         self.alignment_vel = self.alignment_vel / np.linalg.norm(self.alignment_vel)
 
         # Wall velocity
+        # x_min, x_max, y_min, y_max = latest_map.get_limits()
+        # raw_wall_vel = np.array(
+        #     [
+        #         -1 if self.state[0] < x_min else 1 if self.state[0] > x_max else 0,
+        #         -1 if self.state[1] < y_min else 1 if self.state[1] > y_max else 0,
+        #     ]
+        # )
+        # norm = np.linalg.norm(raw_wall_vel)
+        # self.wall_vel = raw_wall_vel / norm if norm > 0 else np.zeros(2) # avoid division by zero
+        # Wall velocity (repel from nearby walls using potential-field-like logic)
+        
+        # Wall Repulsion
         x_min, x_max, y_min, y_max = latest_map.get_limits()
-        self.wall_vel = np.array(
-            [
-                -1 if self.state[0] < x_min else 1 if self.state[0] > x_max else 0,
-                -1 if self.state[1] < y_min else 1 if self.state[1] > y_max else 0,
-            ]
-        )
-        self.wall_vel = self.wall_vel / np.linalg.norm(self.wall_vel)
+
+        # Distance to walls
+        dx_min = self.state[0] - x_min
+        dx_max = x_max - self.state[0]
+        dy_min = self.state[1] - y_min
+        dy_max = y_max - self.state[1]
+
+        repel = np.zeros(2)
+        repel_threshold = 0.5  # Adjust this threshold as needed
+
+        # X-direction repulsion
+        if dx_min < repel_threshold:
+            repel[0] += 1.0 / (dx_min + 1e-3)
+        if dx_max < repel_threshold:
+            repel[0] -= 1.0 / (dx_max + 1e-3)
+
+        # Y-direction repulsion
+        if dy_min < repel_threshold:
+            repel[1] += 1.0 / (dy_min + 1e-3)
+        if dy_max < repel_threshold:
+            repel[1] -= 1.0 / (dy_max + 1e-3)
+
+        # Normalize
+        norm = np.linalg.norm(repel)
+        self.wall_vel = repel / norm if norm > 0 else np.zeros(2)
 
         # Obstacle velocity
         surrounding_obstacles = latest_map.get_surrounding_obstacles(
@@ -373,6 +403,7 @@ class TurtlebotController(object):
         actual_velocities = np.array(self.actual_velocities)
         target_velocities = np.array(self.target_velocities)
         times = np.array(self.times)
+    
 
         rospy.loginfo(f"Data shapes - positions: {actual_positions.shape}, velocities: {actual_velocities.shape}, times: {times.shape}")
 

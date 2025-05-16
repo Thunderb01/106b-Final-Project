@@ -210,10 +210,11 @@
     <node name="explorer_bot_1"
           pkg="mapping"
           type="mapping_node.py"
-          output="screen">
+          output="screen"
+          args="diff_drive_controller">
 
       <param name="frames/fixed" value="map" />
-      <param name="frames/sensor" value="robot_1/base_footprint" />
+      <param name="frames/sensor" value="robot_1/base_link" />
 
       <param name="topics/vis" value="/robot_1/vis/map" />
       <param name="topics/sensor" value="/robot_1/scan" />
@@ -239,10 +240,11 @@
     <node name="explorer_bot_2"
           pkg="mapping"
           type="mapping_node.py"
-          output="screen">
+          output="screen"
+          args="diff_drive_controller">
 
       <param name="frames/fixed" value="map" />
-      <param name="frames/sensor" value="robot_2/base_footprint" />
+      <param name="frames/sensor" value="robot_2/base_link" />
 
       <param name="topics/vis" value="/robot_2/vis/map" />
       <param name="topics/sensor" value="/robot_2/scan" />
@@ -268,10 +270,11 @@
     <node name="explorer_bot_3"
           pkg="mapping"
           type="mapping_node.py"
-          output="screen">
+          output="screen"
+          args="diff_drive_controller">
 
       <param name="frames/fixed" value="map" />
-      <param name="frames/sensor" value="robot_3/base_footprint" />
+      <param name="frames/sensor" value="robot_3/base_link" />
 
       <param name="topics/vis" value="/robot_3/vis/map" />
       <param name="topics/sensor" value="/robot_3/scan" />

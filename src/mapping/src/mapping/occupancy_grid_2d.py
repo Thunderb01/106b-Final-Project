@@ -216,8 +216,9 @@ class OccupancyGrid2d(object):
           
                 
             voxel_final = self.point_to_voxel(x_final, y_final)
-            if voxel_final[0] > self._x_num or voxel_final[1] > self._y_num:
-                print("voxel_final out of bounds")
+            # TODO: Alex will fix this. Right alex....? ong no🧢
+            if voxel_final[0] >= self._x_num or voxel_final[1] >= self._y_num:
+                # print("voxel_final out of bounds")
                 continue
             else:
                 # Update the log-odds value at the final voxel.

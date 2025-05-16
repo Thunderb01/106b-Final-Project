@@ -163,7 +163,8 @@ class ExplorerBot:
         """
         # You can add your processing logic here
         neighbor_map = OccupancyGrid2d.from_msg(msg)
-        self.latest_map._map = OccupancyGrid2d.merge_maps(self.latest_map, neighbor_map)
+        # TODO: turn this on alex ong no 🧢 its ncsry
+        # self.latest_map._map = OccupancyGrid2d.merge_maps(self.latest_map, neighbor_map)
 
     def _state_callback(self, msg):
         """

@@ -100,7 +100,7 @@ class TurtlebotController(object):
         surrounding_obstacles = latest_map.get_surrounding_obstacles(
             self.state[:2], self.collision_radius, is_point=True
         )
-        rospy.logwarn("Obstacles: %s", surrounding_obstacles)
+        # rospy.logwarn("Obstacles: %s", surrounding_obstacles)
         obstacle_pos, obstacle_dist = (
             surrounding_obstacles[0] if len(surrounding_obstacles) > 0 else (None, 0)
         )
@@ -129,11 +129,9 @@ class TurtlebotController(object):
         self.flock_vel += self.wall_weight * self.wall_vel
         
         # Obstacle velocity
-        rospy.logwarn("Calculating obstacle velocity")
         surrounding_obstacles = latest_map.get_surrounding_obstacles(
             self.state[:2], self.collision_radius, is_point=True
         )
-        rospy.logwarn("Obstacles: %s", surrounding_obstacles)
         obstacle_pos, obstacle_dist = (
             surrounding_obstacles[0] if len(surrounding_obstacles) > 0 else (None, 0)
         )

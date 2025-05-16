@@ -198,6 +198,27 @@ class FrontierUpdater:
 
         Returns:
             Closest frontier region
+  # Flocking parameters
+  cohesion_radius: 1.0  # meters
+  separation_radius: 0.5 # meters
+  alignment_radius: 1.0  # meters
+  collision_radius: 0.5  # meters
+
+  # Weights for different behaviors
+  cohesion_weight: 0.23
+  separation_weight: 1.1
+  alignment_weight: 0.5
+  obstacle_weight: 1.1
+  wall_weight: 1.1
+  frontier_weight: 0.08
+
+  # Frontier parameters
+  frontier_dist_wt: 0.001
+  frontier_size_wt: 1.0
+
+  # Communication parameters
+  comm_radius: 5.0     # meters
+  max_neighbor_age: 0.5 # seconds 
         """
         # Assuming you have a way to get the robot's position
         robot_position = self.get_robot_position(robot_id)

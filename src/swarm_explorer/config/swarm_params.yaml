@@ -4,7 +4,7 @@
 # Communication parameters
 comm_radius: 5.0
 publish_rate: 5.0
-max_neighbor_age: 0.5 # seconds
+max_neighbor_age: 2 # seconds
 # Radii
 cohesion_radius: 1.5
 separation_radius: 0.65

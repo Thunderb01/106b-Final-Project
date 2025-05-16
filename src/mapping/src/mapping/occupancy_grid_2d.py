@@ -37,7 +37,7 @@ class OccupancyGrid2d(object):
         """
         obj = cls()
         obj.Initialize(setup_callbacks=False)
-        obj._map = np.array(msg.data).reshape((msg.data.info.width, msg.data.info.height))
+        obj._map = np.array(msg.grid.data).reshape((msg.grid.info.width, msg.grid.info.height))
         return obj
 
     # Initialization and loading parameters.
@@ -166,6 +166,12 @@ class OccupancyGrid2d(object):
              pose.transform.rotation.z, pose.transform.rotation.w])
         if abs(roll) > 0.1 or abs(pitch) > 0.1:
             rospy.logwarn("%s: Turtlebot roll/pitch is too large.", self._name)
+        
+        try:
+            tframe = self._tf_buffer.lookup_transform("map", self.sensor_frame, rospy.Time(0), rospy.Duration(0.1))
+            rospy.loginfo(f"[{rospy.get_name()}] TF translation: {tframe.transform.translation}")
+        except Exception as e:
+            rospy.logwarn(f"TF lookup failed: {e}")
 
         # Loop over all ranges in the LaserScan.
         for idx, r in enumerate(msg.ranges):
@@ -181,12 +187,12 @@ class OccupancyGrid2d(object):
 
             # Throw out this point if it is too close or too far away.
             if r > msg.range_max:
-                rospy.logwarn("%s: Range %f > %f was too large.",
-                              self._name, r, msg.range_max)
+                # rospy.logwarn("%s: Range %f > %f was too large.",
+                #               self._name, r, msg.range_max)
                 continue
             if r < msg.range_min:
-                rospy.logwarn("%s: Range %f < %f was too small.",
-                              self._name, r, msg.range_min)
+                # rospy.logwarn("%s: Range %f < %f was too small.",
+                #               self._name, r, msg.range_min)
                 continue
 
             # Walk along this ray from the scan point to the sensor.
@@ -210,9 +216,6 @@ class OccupancyGrid2d(object):
           
                 
             voxel_final = self.point_to_voxel(x_final, y_final)
-            print("voxel_final", voxel_final)
-            print(self._x_num, self._y_num)
-            print(self._map)
             if voxel_final[0] > self._x_num or voxel_final[1] > self._y_num:
                 print("voxel_final out of bounds")
                 continue
@@ -334,19 +337,27 @@ class OccupancyGrid2d(object):
 
         return neighbors
     
-    def get_surrounding_obstacles(self, voxel, radius=1, is_point=False):
+    def get_surrounding_obstacles(self, position, radius=1, is_point=False):
         """
         Returns surrounding obstacles within a given radius - in the shape of a diamond.
 
         Args:
-            voxel (tuple): (grid_x, grid_y) index
-            radius (int): radius to search for obstacles
+            position (tuple(float)): (x, y) 
+            radius (float): radius to search for obstacles
 
         Returns:
             List of obstacle voxel indices and distances (tuples: (voxel, distance))
         """
+        voxel = self.point_to_voxel(position[0], position[1])
+        rospy.loginfo(f"voxel: {voxel}")
+        rospy.loginfo(f"position: {position}")
+
+
         ii, jj = voxel
         obstacles = []
+        # TODO: this only works for equal x_res and y_res
+        radius = int(radius * self._x_res)  # Adjust radius based on resolution
+        rospy.loginfo(f"radius: {radius}")
 
         for dx in range(-radius, radius + 1):
             for dy in range(-radius, radius + 1):
@@ -374,7 +385,7 @@ class OccupancyGrid2d(object):
         Returns:
             bool: True if the voxel is free, False otherwise
         """
-        return self._map[voxel] < self._free_threshold
+        return self._map[voxel[0], voxel[1]] < self._free_threshold
     
     def is_voxel_occupied(self, voxel):
         """
@@ -384,7 +395,7 @@ class OccupancyGrid2d(object):
         Returns:
             bool: True if the voxel is occupied, False otherwise
         """
-        return self._map[voxel] > self._occupied_threshold
+        return self._map[voxel[0], voxel[1]] > self._occupied_threshold
     
     def is_voxel_unknown(self, voxel):
         """
@@ -394,7 +405,10 @@ class OccupancyGrid2d(object):
         Returns:
             bool: True if the voxel is unknown, False otherwise
         """
-        return self._map[voxel] >= self._free_threshold and self._map[voxel] <= self._occupied_threshold
+        return (
+            self._map[voxel[0], voxel[1]] >= self._free_threshold and 
+            self._map[voxel[0], voxel[1]] <= self._occupied_threshold
+        )
     
     @staticmethod
     def merge_maps(map1, map2, clip_min=-10.0, clip_max=10.0):

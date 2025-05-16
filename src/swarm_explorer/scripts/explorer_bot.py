@@ -36,10 +36,11 @@ class ExplorerBot:
         #     rospy.logerr("Invalid map topic specified. Exiting.")
         #     rospy.signal_shutdown("Invalid map topic specified.")
         #     return
-        self.map_topic: str = "/swarm/robot_maps"
-        self.map_pub_topic: str = f"/robot_{self.bot_id}/incoming/map"
-        self.state_topic: str = "/swarm/robot_states"
-        self.state_pub_topic: str = f"/robot_{self.bot_id}/incoming/state"
+        
+        self.map_topic: str = f"/robot_{self.bot_id}/incoming/map"
+        self.map_pub_topic: str = "/swarm/robot_maps"
+        self.state_topic: str = f"/robot_{self.bot_id}/incoming/state"
+        self.state_pub_topic: str = "/swarm/robot_states"
         # self.cmd_topic: str = f"/robot_{self.bot_id}/cmd_vel"
 
         # storage for callbacks
@@ -241,12 +242,7 @@ class ExplorerBot:
 
     def run(self):
         rate = rospy.Rate(10)  # 10 Hz control loop
-        # Plotting variables
-        actual_positions = []
-        actual_velocities = []
-        target_positions = []
-        target_velocities = []
-        times = []
+        
         # Main loop
         while not rospy.is_shutdown() and not self.should_exit and not self.frontier_updater.map_fully_known():
             # Process the latest map and neighbor states
@@ -274,7 +270,7 @@ class ExplorerBot:
             true_neighbor_states = {
                 k: v
                 for k, v in self.neighbor_states.items()
-                if (rospy.Time.now() - v.header.stamp).to_sec() < self.max_neighbor_age
+                if (rospy.Time.now() - v.odometry.header.stamp).to_sec() < self.max_neighbor_age
             }
             ref_vel = self.controller.calc_reference_vels(
                 curr_state=np.array([self.curr_state['x'], self.curr_state['y'], self.curr_state['theta']]), # current state
@@ -292,8 +288,14 @@ class ExplorerBot:
             state_msg.odometry = self.curr_odom
             # TODO: fill in flock velocity and frontier velocity from controller
             # I think this means we do need to call controller first
-            state_msg.flock_twist = self.controller.flock_vel
-            state_msg.frontier_twist = self.controller.frontier_vel
+            flock_twist = Twist()
+            flock_twist.linear.x = self.controller.flock_vel[0]
+            flock_twist.linear.y = self.controller.flock_vel[1]
+            frontier_twist = Twist()
+            frontier_twist.linear.x = self.controller.frontier_vel[0]
+            frontier_twist.linear.y = self.controller.frontier_vel[1]
+            state_msg.flock_twist = flock_twist
+            state_msg.frontier_twist = frontier_twist
             self.pub_state.publish(state_msg)
 
             rate.sleep()

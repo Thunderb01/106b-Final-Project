@@ -38,10 +38,10 @@ class SwarmRelay(object):
         self.bots_dict[msg.robot_id] = msg  # TODO: any issues with pointer stuff?
 
         # publish the message to all robots within the communication radius
-        for robot_id in self.bots_dict:
+        for robot_id in list(self.bots_dict):
             if robot_id == msg.robot_id:
                 continue
-            if not self._within_radius(msg.robot_id, robot_id):
+            if not self._within_radius(sender_id=msg.robot_id, recipient_id=robot_id):
                 continue
 
             # lazy‐create publisher
@@ -57,11 +57,15 @@ class SwarmRelay(object):
         Update the map of the robot with the given id.
         The map is given in the message.
         """
+        if msg.robot_id not in self.bots_dict:
+            rospy.logwarn(f"Robot {msg.robot_id} not found in bots_dict")
+            return
+        
         # publish the message to all robots within the communication radius
-        for robot_id in self.bots_dict:
+        for robot_id in list(self.bots_dict):
             if robot_id == msg.robot_id:
                 continue
-            if not self._within_radius(msg.robot_id, robot_id):
+            if not self._within_radius(sender_id=msg.robot_id, recipient_id=robot_id):
                 continue
 
             # lazy‐create publisher
@@ -73,8 +77,8 @@ class SwarmRelay(object):
             self.map_pubs[robot_id].publish(msg)
 
     def _within_radius(self, sender_id: int, recipient_id: int) -> bool:
-        p1 = self.bots_dict.get(sender_id).state
-        p2 = self.bots_dict.get(recipient_id).state
+        p1 = self.bots_dict.get(sender_id).pose.position
+        p2 = self.bots_dict.get(recipient_id).pose.position
         if not p1 or not p2:
             return False
         dx, dy = p1.x - p2.x, p1.y - p2.y

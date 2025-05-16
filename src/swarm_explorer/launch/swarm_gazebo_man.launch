@@ -8,7 +8,7 @@
   <!--  3) Start Gazebo with a world of my choosing -->
 
   <!-- Set world file path relative to this package -->
-  <arg name="world_path" default="$(find swarm_explorer)/launch/worlds/world_3.world"/>
+  <arg name="world_path" default="$(find swarm_explorer)/launch/worlds/world_4.world"/>
   <!-- <arg name="world_path" default="$(find gazebo_ros)/worlds/empty.world"/> -->
 
   <!-- Launch Gazebo with your custom world -->

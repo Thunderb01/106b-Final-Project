@@ -51,8 +51,8 @@ class TurtlebotController(object):
         self.tb_id = tb_id
         self.state = np.array([0, 0, 0])  # (x, y, theta)
         self.state_dot = np.array([0, 0, 0])  # (x_dot, y_dot, theta_dot)
-        self.flock_vel = np.zeros(2)  # (linear, angular)
-        self.frontier_vel = np.zeros(2)  # (linear, angular)
+        self.flock_vel = np.zeros(2)  # (linear_x, linear_y)
+        self.frontier_vel = np.zeros(2)  # (linear_x, linear_y)
 
         self.cohesion_radius = cohesion_radius
         self.separation_radius = separation_radius
@@ -93,78 +93,14 @@ class TurtlebotController(object):
         self.times = []
         self.start_time = rospy.Time.now()
 
-    def _calc_flock_vel(self, latest_map, neighbor_states):
+    def _calc_obstacle_vel(self, latest_map):
         """
-        Calculate the flocking velocity based on the positions of the neighbors.
+        Calculate the velocity towards the nearest obstacle and velcoity to avoid walls.
         """
-        if len(neighbor_states) == 0:
-            self.flock_vel = np.zeros(2)
-            return
-        
-        # Cohesion velocity
-        avg_cohesion_pos = self._calc_avg_pos_in_radius(
-            neighbor_states, self.cohesion_radius
-        )
-        self.cohesion_vel = avg_cohesion_pos - self.state[:2]
-        self.cohesion_vel = self.cohesion_vel / np.linalg.norm(self.cohesion_vel)
-
-        # Separation velocity
-        avg_sep_pos = self._calc_avg_pos_in_radius(
-            neighbor_states, self.separation_radius
-        )
-        self.separation_vel = self.state[:2] - avg_sep_pos
-        self.separation_vel = self.separation_vel / np.linalg.norm(self.separation_vel)
-
-        # Alignment velocity
-        self.alignment_vel = self._calc_avg_flock_vel(
-            neighbor_states, self.alignment_radius
-        )
-        self.alignment_vel = self.alignment_vel / np.linalg.norm(self.alignment_vel)
-
-        # Wall velocity
-        # x_min, x_max, y_min, y_max = latest_map.get_limits()
-        # raw_wall_vel = np.array(
-        #     [
-        #         -1 if self.state[0] < x_min else 1 if self.state[0] > x_max else 0,
-        #         -1 if self.state[1] < y_min else 1 if self.state[1] > y_max else 0,
-        #     ]
-        # )
-        # norm = np.linalg.norm(raw_wall_vel)
-        # self.wall_vel = raw_wall_vel / norm if norm > 0 else np.zeros(2) # avoid division by zero
-        # Wall velocity (repel from nearby walls using potential-field-like logic)
-        
-        # Wall Repulsion
-        x_min, x_max, y_min, y_max = latest_map.get_limits()
-
-        # Distance to walls
-        dx_min = self.state[0] - x_min
-        dx_max = x_max - self.state[0]
-        dy_min = self.state[1] - y_min
-        dy_max = y_max - self.state[1]
-
-        repel = np.zeros(2)
-        repel_threshold = 0.5  # Adjust this threshold as needed
-
-        # X-direction repulsion
-        if dx_min < repel_threshold:
-            repel[0] += 1.0 / (dx_min + 1e-3)
-        if dx_max < repel_threshold:
-            repel[0] -= 1.0 / (dx_max + 1e-3)
-
-        # Y-direction repulsion
-        if dy_min < repel_threshold:
-            repel[1] += 1.0 / (dy_min + 1e-3)
-        if dy_max < repel_threshold:
-            repel[1] -= 1.0 / (dy_max + 1e-3)
-
-        # Normalize
-        norm = np.linalg.norm(repel)
-        self.wall_vel = repel / norm if norm > 0 else np.zeros(2)
-
-        # Obstacle velocity
         surrounding_obstacles = latest_map.get_surrounding_obstacles(
             self.state[:2], self.collision_radius, is_point=True
         )
+        rospy.logwarn("Obstacles: %s", surrounding_obstacles)
         obstacle_pos, obstacle_dist = (
             surrounding_obstacles[0] if len(surrounding_obstacles) > 0 else (None, 0)
         )
@@ -176,6 +112,67 @@ class TurtlebotController(object):
         else:
             self.obstacle_vel = np.zeros(2)
             self.obstacle_weight = 0.0
+        self.flock_vel += self.obstacle_weight * self.obstacle_vel
+
+    def _calc_flock_vel(self, latest_map, neighbor_states):
+        """
+        Calculate the flocking velocity based on the positions of the neighbors.
+        """
+        # Wall velocity
+        x_min, x_max, y_min, y_max = latest_map.get_limits()
+        self.wall_vel = np.array(
+            [
+                -1 if self.state[0] < x_min else 1 if self.state[0] > x_max else 0,
+                -1 if self.state[1] < y_min else 1 if self.state[1] > y_max else 0,
+            ]
+        )
+        self.flock_vel += self.wall_weight * self.wall_vel
+        
+        # Obstacle velocity
+        rospy.logwarn("Calculating obstacle velocity")
+        surrounding_obstacles = latest_map.get_surrounding_obstacles(
+            self.state[:2], self.collision_radius, is_point=True
+        )
+        rospy.logwarn("Obstacles: %s", surrounding_obstacles)
+        obstacle_pos, obstacle_dist = (
+            surrounding_obstacles[0] if len(surrounding_obstacles) > 0 else (None, 0)
+        )
+        if obstacle_pos is not None:
+            self.obstacle_vel = np.array(
+                [self.state[0] - obstacle_pos[0], self.state[1] - obstacle_pos[1]]
+            )
+            self.obstacle_vel = self.obstacle_vel / np.linalg.norm(self.obstacle_vel)
+        else:
+            self.obstacle_vel = np.zeros(2)
+            self.obstacle_weight = 0.0
+        self.flock_vel += self.obstacle_weight * self.obstacle_vel
+
+        # Flock Velocity Calculation if neighbors
+        if len(neighbor_states) == 0:
+            rospy.logwarn("Robot %d: no neighbors found", self.tb_id)
+            self.cohesion_vel = np.zeros(2)
+            self.separation_vel = np.zeros(2)
+            self.alignment_vel = np.zeros(2)
+        else:    
+            # Cohesion velocity
+            avg_cohesion_pos = self._calc_avg_pos_in_radius(
+                neighbor_states, self.cohesion_radius
+            )
+            self.cohesion_vel = avg_cohesion_pos - self.state[:2]
+            self.cohesion_vel = self.cohesion_vel / np.linalg.norm(self.cohesion_vel)
+
+            # Separation velocity
+            avg_sep_pos = self._calc_avg_pos_in_radius(
+                neighbor_states, self.separation_radius
+            )
+            self.separation_vel = self.state[:2] - avg_sep_pos
+            self.separation_vel = self.separation_vel / np.linalg.norm(self.separation_vel)
+
+            # Alignment velocity
+            self.alignment_vel = self._calc_avg_flock_vel(
+                neighbor_states, self.alignment_radius
+            )
+            self.alignment_vel = self.alignment_vel / np.linalg.norm(self.alignment_vel)
 
         dynamic_scale = (self.collision_radius - obstacle_dist) / self.cohesion_radius
         self.obstacle_weight *= dynamic_scale
@@ -183,14 +180,15 @@ class TurtlebotController(object):
         self.cohesion_weight *= max(1 - 2 * dynamic_scale, 0)
         self.frontier_weight *= max(1 - 2 * dynamic_scale, 0)
 
-        self.flock_vel = (
+        self.flock_vel = flock_vel = (
             self.flock_vel
-            + self.cohesion_weight * self.cohesion_vel
+            # + self.cohesion_weight * self.cohesion_vel
             + self.alignment_weight * self.alignment_vel
             + self.separation_weight * self.separation_vel
             + self.wall_weight * self.wall_vel
             + self.obstacle_weight * self.obstacle_vel
         )  # (x_dot, y_dot)
+        # rospy.loginfo(f"Flock velocity: {flock_vel}")
 
     def _calc_frontier_vel(self, best_frontier):
         """
@@ -204,6 +202,7 @@ class TurtlebotController(object):
             * (np.array(best_frontier.get_centroid()) - self.state[:2])
             * (np.isclose(np.linalg.norm(self.separation_vel), 0.0))
         )
+        # rospy.loginfo(f"Frontier velocity: {self.frontier_vel}")
 
     def calc_reference_vels(
         self, curr_state, latest_map, neighbor_states, best_frontier
@@ -221,10 +220,14 @@ class TurtlebotController(object):
             ref_velocities : reference velocities for the robot in [linear, angular] configuration space.
         """
         # Update the robot's velocities
+        # rospy.loginfo(f"Calculating reference velocities for robot {self.tb_id}")
         self.state = curr_state
         self._calc_flock_vel(latest_map=latest_map, neighbor_states=neighbor_states)
+        # rospy.loginfo(f"Flock velocity: {self.flock_vel}")
         self._calc_frontier_vel(best_frontier=best_frontier)
+        # rospy.loginfo(f"Frontier velocity: {self.frontier_vel}")
         target_vel = self.flock_vel + self.frontier_vel  # (x_dot, y_dot)
+        # rospy.loginfo(f"Target velocity: {target_vel}")
         
         # Normalize target velocity to unit vector
         target_vel_mag = np.linalg.norm(target_vel)
@@ -358,8 +361,8 @@ class TurtlebotController(object):
             [
                 np.array(
                     [
-                        state.flock_velocity.linear.x,
-                        state.flock_velocity.linear.y,
+                        state.flock_twist.linear.x,
+                        state.flock_twist.linear.y,
                     ]
                 )
                 for state in neighbor_states.values()
@@ -388,6 +391,16 @@ class TurtlebotController(object):
         """
         rospy.loginfo("Shutting down")
         self.cmd(Twist())
+    
+    def state_to_twist(self, state):
+        """
+        Convert the state to a Twist message.
+        """
+        twist = Twist()
+        twist.linear.x = state[0]
+        twist.linear.y = state[1]
+        twist.angular.z = state[2]
+        return twist
 
     def plot_results(self):
         """Plot the results of the control loop."""

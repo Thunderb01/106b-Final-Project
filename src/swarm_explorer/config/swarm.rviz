@@ -207,6 +207,7 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

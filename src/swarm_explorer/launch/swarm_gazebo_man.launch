@@ -5,12 +5,19 @@
   <!--  2) How many bots? (for your own reference)  -->
   <arg name="num_bots" default="3"/>
 
-  <!--  3) Start Gazebo with an empty world  -->
+  <!--  3) Start Gazebo with a world of my choosing -->
+
+  <!-- Set world file path relative to this package -->
+  <arg name="world_path" default="$(find swarm_explorer)/launch/worlds/world_3.world"/>
+  <!-- <arg name="world_path" default="$(find gazebo_ros)/worlds/empty.world"/> -->
+
+  <!-- Launch Gazebo with your custom world -->
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
-    <arg name="world_name"  value="$(find gazebo_ros)/worlds/empty.world"/>
-    <arg name="paused"      value="false"/>
+    <arg name="world_name" value="$(arg world_path)"/>
+    <arg name="paused" value="false"/>
     <arg name="use_sim_time" value="true"/>
   </include>
+
 
   <!-- Static transforms from map to odom for each robot -->
   <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom_1" 
@@ -195,6 +202,94 @@
     <include file="$(find swarm_explorer)/launch/explorer_bot.launch">
       <arg name="robot_id" value="3"/>
     </include>
+  </group>
+
+    <!-- Launch Occupancy Grid Mappers -->
+    <!-- Occupancy grid mapper for robot_1 -->
+  <group ns="robot_1">
+    <node name="explorer_bot_1"
+          pkg="mapping"
+          type="mapping_node.py"
+          output="screen">
+
+      <param name="frames/fixed" value="map" />
+      <param name="frames/sensor" value="robot_1/base_link" />
+
+      <param name="topics/vis" value="/robot_1/vis/map" />
+      <param name="topics/sensor" value="/robot_1/scan" />
+
+      <param name="x/num" value="50" />
+      <param name="x/min" value="-10.0" />
+      <param name="x/max" value="10.0" />
+      <param name="y/num" value="50" />
+      <param name="y/min" value="-10.0" />
+      <param name="y/max" value="10.0" />
+
+      <param name="update/occupied" value="0.7" />
+      <param name="update/occupied_threshold" value="0.97" />
+      <param name="update/free" value="0.3" />
+      <param name="update/free_threshold" value="0.03" />
+
+      <param name="random_downsample" value="0.1" />
+    </node>
+  </group>
+
+      <!-- Occupancy grid mapper for robot_1 -->
+  <group ns="robot_2">
+    <node name="explorer_bot_2"
+          pkg="mapping"
+          type="mapping_node.py"
+          output="screen">
+
+      <param name="frames/fixed" value="map" />
+      <param name="frames/sensor" value="robot_2/base_link" />
+
+      <param name="topics/vis" value="/robot_2/vis/map" />
+      <param name="topics/sensor" value="/robot_2/scan" />
+
+      <param name="x/num" value="50" />
+      <param name="x/min" value="-10.0" />
+      <param name="x/max" value="10.0" />
+      <param name="y/num" value="50" />
+      <param name="y/min" value="-10.0" />
+      <param name="y/max" value="10.0" />
+
+      <param name="update/occupied" value="0.7" />
+      <param name="update/occupied_threshold" value="0.97" />
+      <param name="update/free" value="0.3" />
+      <param name="update/free_threshold" value="0.03" />
+
+      <param name="random_downsample" value="0.1" />
+    </node>
+  </group>
+
+      <!-- Occupancy grid mapper for robot_1 -->
+  <group ns="robot_3">
+    <node name="explorer_bot_3"
+          pkg="mapping"
+          type="mapping_node.py"
+          output="screen">
+
+      <param name="frames/fixed" value="map" />
+      <param name="frames/sensor" value="robot_3/base_link" />
+
+      <param name="topics/vis" value="/robot_3/vis/map" />
+      <param name="topics/sensor" value="/robot_3/scan" />
+
+      <param name="x/num" value="50" />
+      <param name="x/min" value="-10.0" />
+      <param name="x/max" value="10.0" />
+      <param name="y/num" value="50" />
+      <param name="y/min" value="-10.0" />
+      <param name="y/max" value="10.0" />
+
+      <param name="update/occupied" value="0.7" />
+      <param name="update/occupied_threshold" value="0.97" />
+      <param name="update/free" value="0.3" />
+      <param name="update/free_threshold" value="0.03" />
+
+      <param name="random_downsample" value="0.1" />
+    </node>
   </group>
 
   <!-- Launch RViz -->

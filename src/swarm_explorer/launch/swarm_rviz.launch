@@ -1,5 +1,5 @@
 <launch>
   <!-- Launch RViz with the swarm configuration -->
   <node pkg="rviz" type="rviz" name="rviz" 
-        args="-d $(find swarm_explorer)/config/swarm.rviz"/>
+        args="-d $(find swarm_explorer)/config/swarm_w_occupancy_grid.rviz"/>
 </launch> 

@@ -1,6 +1,7 @@
 <launch>
   <!--  1) Use sim time  -->
   <param name="use_sim_time" value="true"/>
+  <param name="/use_sim_time" value="true"/>
 
   <!--  2) How many bots? (for your own reference)  -->
   <arg name="num_bots" default="3"/>
@@ -16,6 +17,9 @@
     <arg name="world_name" value="$(arg world_path)"/>
     <arg name="paused" value="false"/>
     <arg name="use_sim_time" value="true"/>
+    <arg name="gui" value="true"/>
+    <arg name="headless" value="false"/>
+    <arg name="debug" value="false"/>
   </include>
 
 
@@ -38,7 +42,7 @@
         args="-param /robot_1/robot_description 
               -urdf 
               -model robot_1 
-              -x 0 -y 0 -z 0.01 
+              -x 0 -y 0 -z 0.0 
               -robot_namespace /robot_1"/>
   
   <rosparam ns="robot_1/diff_drive_controller">
@@ -89,7 +93,7 @@
         args="-param /robot_2/robot_description 
               -urdf 
               -model robot_2 
-              -x 2 -y 0 -z 0.01 
+              -x 2 -y 0 -z 0.0 
               -robot_namespace /robot_2"/>
   
   <rosparam ns="robot_2/diff_drive_controller">
@@ -140,7 +144,7 @@
         args="-param /robot_3/robot_description 
               -urdf 
               -model robot_3 
-              -x 4 -y 0 -z 0.01 
+              -x 4 -y 0 -z 0.0 
               -robot_namespace /robot_3"/>
  
   <rosparam ns="robot_3/diff_drive_controller">
@@ -207,14 +211,15 @@
     <!-- Launch Occupancy Grid Mappers -->
     <!-- Occupancy grid mapper for robot_1 -->
   <group ns="robot_1">
-    <node name="explorer_bot_1"
+    <node name="mapping_node_1"
           pkg="mapping"
           type="mapping_node.py"
           output="screen"
-          args="diff_drive_controller">
+          args="diff_drive_controller"
+          launch-prefix="bash -c 'sleep 3; $0 $@'">
 
       <param name="frames/fixed" value="map" />
-      <param name="frames/sensor" value="robot_1/base_link" />
+      <param name="frames/sensor" value="robot_1/base_scan" />
 
       <param name="topics/vis" value="/robot_1/vis/map" />
       <param name="topics/sensor" value="/robot_1/scan" />
@@ -237,14 +242,15 @@
 
       <!-- Occupancy grid mapper for robot_1 -->
   <group ns="robot_2">
-    <node name="explorer_bot_2"
+    <node name="mapping_node_2"
           pkg="mapping"
           type="mapping_node.py"
           output="screen"
-          args="diff_drive_controller">
+          args="diff_drive_controller"
+          launch-prefix="bash -c 'sleep 3; $0 $@'">
 
       <param name="frames/fixed" value="map" />
-      <param name="frames/sensor" value="robot_2/base_link" />
+      <param name="frames/sensor" value="robot_2/base_scan" />
 
       <param name="topics/vis" value="/robot_2/vis/map" />
       <param name="topics/sensor" value="/robot_2/scan" />
@@ -267,14 +273,15 @@
 
       <!-- Occupancy grid mapper for robot_1 -->
   <group ns="robot_3">
-    <node name="explorer_bot_3"
+    <node name="mapping_node_3"
           pkg="mapping"
           type="mapping_node.py"
           output="screen"
-          args="diff_drive_controller">
+          args="diff_drive_controller"
+          launch-prefix="bash -c 'sleep 3; $0 $@'">
 
       <param name="frames/fixed" value="map" />
-      <param name="frames/sensor" value="robot_3/base_link" />
+      <param name="frames/sensor" value="robot_3/base_scan" />
 
       <param name="topics/vis" value="/robot_3/vis/map" />
       <param name="topics/sensor" value="/robot_3/scan" />

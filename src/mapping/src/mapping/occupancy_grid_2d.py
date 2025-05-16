@@ -62,7 +62,7 @@ class OccupancyGrid2d(object):
         return True
 
     def load_parameters(self):
-    # List of (param_name, attr_name, transform) tuples:
+        # List of (param_name, attr_name, transform) tuples:
         params = [
             # downsample
             ("random_downsample", "_random_downsample", lambda v: v),
@@ -282,6 +282,10 @@ class OccupancyGrid2d(object):
     def point_to_voxel(self, x, y):
         grid_x = int((x - self._x_min) / self._x_res)
         grid_y = int((y - self._y_min) / self._y_res)
+
+        # Ensure indices are within bounds
+        grid_x = max(0, min(grid_x, self._x_num - 1))
+        grid_y = max(0, min(grid_y, self._y_num - 1))
 
         return (grid_x, grid_y)
 

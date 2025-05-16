@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 ################################################################################
 #
 # Node to wrap the OccupancyGrid2d class.

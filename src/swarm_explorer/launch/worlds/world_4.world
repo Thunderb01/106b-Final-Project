@@ -106,7 +106,7 @@
         <pose>-0.069845 -0.011878 0 0 -0 0</pose>
         <scale>1 1 1</scale>
         <link name='Wall_0'>
-          <pose>-5.80033 -0.205597 0 0 -0 1.5708</pose>
+          <pose>-10 0 0 0 -0 1.5708</pose>
           <velocity>0 0 0 0 -0 0</velocity>
           <acceleration>0 0 0 0 -0 0</acceleration>
           <wrench>0 0 0 0 -0 0</wrench>
@@ -130,7 +130,7 @@
           <wrench>0 0 0 0 -0 0</wrench>
         </link>
         <link name='Wall_2'>
-          <pose>1.62599 9.51975 0 0 -0 0</pose>
+          <pose>0 10 0 0 -0 0</pose>
           <velocity>0 0 0 0 -0 0</velocity>
           <acceleration>0 0 0 0 -0 0</acceleration>
           <wrench>0 0 0 0 -0 0</wrench>
@@ -142,13 +142,13 @@
           <wrench>0 0 0 0 -0 0</wrench>
         </link>
         <link name='Wall_3'>
-          <pose>9.02404 -0.011903 0 0 0 -1.5708</pose>
+          <pose>10 0 0 0 0 -1.5708</pose>
           <velocity>0 0 0 0 -0 0</velocity>
           <acceleration>0 0 0 0 -0 0</acceleration>
           <wrench>0 0 0 0 -0 0</wrench>
         </link>
         <link name='Wall_4'>
-          <pose>-0.069863 -9.1518 0 0 -0 3.14159</pose>
+          <pose>0 -10 0 0 -0 3.14159</pose>
           <velocity>0 0 0 0 -0 0</velocity>
           <acceleration>0 0 0 0 -0 0</acceleration>
           <wrench>0 0 0 0 -0 0</wrench>
@@ -179,7 +179,7 @@
     </gui>
     <model name='turtlebot3_plaza_bigger'>
       <link name='Wall_0'>
-        <pose>-5.73049 -0.193719 0 0 -0 1.5708</pose>
+        <pose>-10 0 0 0 -0 1.5708</pose>
         <self_collide>0</self_collide>
         <enable_wind>0</enable_wind>
         <kinematic>0</kinematic>
@@ -199,7 +199,7 @@
           <pose>0 0 0.25 0 -0 0</pose>
           <geometry>
             <box>
-              <size>22.5917 0.15 0.5</size>
+              <size>20 0.15 0.5</size>
             </box>
           </geometry>
           <material>
@@ -219,7 +219,7 @@
           <pose>0 0 0.25 0 -0 0</pose>
           <geometry>
             <box>
-              <size>22.5917 0.15 0.5</size>
+              <size>20 0.15 0.5</size>
             </box>
           </geometry>
           <surface>
@@ -543,7 +543,7 @@
         </collision>
       </link>
       <link name='Wall_2'>
-        <pose>1.69583 9.53163 0 0 -0 0</pose>
+        <pose>0 10 0 0 -0 0</pose>
         <self_collide>0</self_collide>
         <enable_wind>0</enable_wind>
         <kinematic>0</kinematic>
@@ -563,7 +563,7 @@
           <pose>0 0 0.25 0 -0 0</pose>
           <geometry>
             <box>
-              <size>15.0495 0.15 0.5</size>
+              <size>20 0.15 0.5</size>
             </box>
           </geometry>
           <material>
@@ -583,7 +583,7 @@
           <pose>0 0 0.25 0 -0 0</pose>
           <geometry>
             <box>
-              <size>15.0495 0.15 0.5</size>
+              <size>20 0.15 0.5</size>
             </box>
           </geometry>
           <surface>
@@ -725,7 +725,7 @@
         </collision>
       </link>
       <link name='Wall_3'>
-        <pose>9.09389 -2.5e-05 0 0 0 -1.5708</pose>
+        <pose>10 0 0 0 0 -1.5708</pose>
         <self_collide>0</self_collide>
         <enable_wind>0</enable_wind>
         <kinematic>0</kinematic>
@@ -745,7 +745,7 @@
           <pose>0 0 0.25 0 -0 0</pose>
           <geometry>
             <box>
-              <size>19.0564 0.15 0.5</size>
+              <size>20 0.15 0.5</size>
             </box>
           </geometry>
           <material>
@@ -765,7 +765,7 @@
           <pose>0 0 0.25 0 -0 0</pose>
           <geometry>
             <box>
-              <size>19.0564 0.15 0.5</size>
+              <size>20 0.15 0.5</size>
             </box>
           </geometry>
           <surface>
@@ -816,7 +816,7 @@
         </collision>
       </link>
       <link name='Wall_4'>
-        <pose>-1.8e-05 -9.13992 0 0 -0 3.14159</pose>
+        <pose>0 -10 0 0 -0 3.14159</pose>
         <self_collide>0</self_collide>
         <enable_wind>0</enable_wind>
         <kinematic>0</kinematic>
@@ -836,7 +836,7 @@
           <pose>0 0 0.25 0 -0 0</pose>
           <geometry>
             <box>
-              <size>18.7492 0.15 0.5</size>
+              <size>20 0.15 0.5</size>
             </box>
           </geometry>
           <material>
@@ -856,7 +856,7 @@
           <pose>0 0 0.25 0 -0 0</pose>
           <geometry>
             <box>
-              <size>18.7492 0.15 0.5</size>
+              <size>20 0.15 0.5</size>
             </box>
           </geometry>
           <surface>

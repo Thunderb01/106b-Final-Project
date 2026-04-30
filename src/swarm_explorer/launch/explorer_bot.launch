@@ -7,6 +7,13 @@
 
       <!-- 1) Load the params in the YAML once -->
       <rosparam file="$(find mapping)/config/mapping_params.yaml" command="load"/>
+      <!-- Ensure explorer_bot's local OccupancyGrid2d listens to this robot's scan. -->
+      <param name="topics/sensor" value="/robot_$(arg robot_id)/scan"/>
+      <param name="topics/vis" value="/robot_$(arg robot_id)/vis/explorer_map"/>
+      <param name="frames/sensor" value="robot_$(arg robot_id)/base_scan"/>
+      <param name="frames/fixed" value="map"/>
+      <param name="vis/max_points" value="600"/>
+      <param name="vis/show_unknown" value="false"/>
     </node>
   </group>
 </launch>

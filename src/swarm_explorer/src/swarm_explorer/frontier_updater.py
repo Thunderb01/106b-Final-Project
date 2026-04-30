@@ -69,6 +69,17 @@ class FrontierUpdater:
         )  # List to store detected frontiers (initialize list of frontiers)
         self.visited = set()  # Set to track visited cells during frontier search
 
+    def _is_likely_free(self, cell, map_data: OccupancyGrid2d):
+        """Treat negative log-odds as traversable free space."""
+        log_odds = map_data.get_voxel_log_odds(cell)
+        return log_odds is not None and log_odds < 0.0
+
+    def _is_frontier_cell(self, cell, map_data: OccupancyGrid2d):
+        if not map_data.is_voxel_unknown(cell):
+            return False
+        neighbors = map_data.get_voxel_neighbors(cell, connectivity=4)
+        return any(self._is_likely_free(n, map_data) for n in neighbors)
+
     def update_frontiers(self, current_position):
         """
         Updates the frontiers of the robots in the swarm using neighbor's map data.
@@ -87,6 +98,29 @@ class FrontierUpdater:
 
         # Perform frontier search
         self.frontiers = self.find_frontiers(current_cell, self.occupancy_map)
+        if len(self.frontiers) == 0:
+            local_map = self.occupancy_map._map
+            free_cells = int(np.sum(local_map < 0.0))
+            unknown_cells = int(
+                np.sum(
+                    (local_map >= self.occupancy_map._free_threshold)
+                    & (local_map <= self.occupancy_map._occupied_threshold)
+                )
+            )
+            start_log_odds = self.occupancy_map.get_voxel_log_odds(current_cell)
+            update_count = self.occupancy_map.get_update_count()
+            rospy.logwarn_throttle(
+                2.0,
+                "Robot %d local frontier=0 (updates=%d, free=%d, unknown=%d, start_log_odds=%.3f)",
+                self.robot_id,
+                update_count,
+                free_cells,
+                unknown_cells,
+                start_log_odds if start_log_odds is not None else float("nan"),
+            )
+        rospy.loginfo_throttle(
+            2.0, "Robot %d frontier regions found: %d", self.robot_id, len(self.frontiers)
+        )
 
         # Filter and process frontiers (optional)
         self.filter_frontiers()
@@ -124,15 +158,21 @@ class FrontierUpdater:
                 # Skip if already visited
                 if neighbor in self.visited:
                     continue
-                
 
-                if map_data.is_voxel_free(neighbor):
+                if self._is_likely_free(neighbor, map_data):
                     queue.append(neighbor)
                 elif map_data.is_voxel_unknown(neighbor):
-                    # Found a frontier cell, now find the entire frontier region
-                    frontier_region = self.find_frontier_region(neighbor, map_data)
-                    if frontier_region:
-                        frontiers.append(frontier_region)
+                    # Check if this unknown cell has at least one free neighbor
+                    neighbor_neighbors = map_data.get_voxel_neighbors(neighbor, connectivity=4)
+                    has_free_neighbor = any(
+                        self._is_likely_free(n, map_data) for n in neighbor_neighbors
+                    )
+                    
+                    if has_free_neighbor:
+                        # Found a frontier cell, now find the entire frontier region
+                        frontier_region = self.find_frontier_region(neighbor, map_data)
+                        if frontier_region and frontier_region.size > 0:  # Only add non-empty regions
+                            frontiers.append(frontier_region)
 
         return frontiers
 
@@ -141,10 +181,9 @@ class FrontierUpdater:
         Implementation of Algorithm 2 - Frontier region connectivity search
 
         Finds a complete frontier region starting from a frontier cell.
-        Similar to the region growing algorithm mentioned in your pseudocode.
+        A frontier region is a connected set of unknown cells that each have at least one free neighbor.
         """
         region = Frontier()
-        region.add_cell(start_cell)  # Add the starting cell to the region
         queue = [start_cell]
         visited = set()
 
@@ -155,15 +194,49 @@ class FrontierUpdater:
                 continue
 
             visited.add(cell)
-            region.add_cell(cell)
 
+            # Check if this cell has at least one free neighbor
             neighbors = map_data.get_voxel_neighbors(cell, connectivity=4)
+            has_free_neighbor = any(self._is_likely_free(n, map_data) for n in neighbors)
+            
+            if has_free_neighbor:
+                region.add_cell(cell)
 
-            for neighbor in neighbors:
-                if map_data.is_voxel_unknown(neighbor) and neighbor not in visited:
-                    queue.append(neighbor)
+                # Add unknown neighbors to the queue
+                for neighbor in neighbors:
+                    if map_data.is_voxel_unknown(neighbor) and neighbor not in visited:
+                        queue.append(neighbor)
 
-        return region  # if len(region) > MIN_FRONTIER_SIZE else None
+        return region if region.size > 0 else None
+
+    def find_frontiers_global(self, map_data: OccupancyGrid2d):
+        """Fallback global frontier extraction across the whole map."""
+        frontiers = []
+        visited_unknown = set()
+        for ii in range(map_data._x_num):
+            for jj in range(map_data._y_num):
+                cell = (ii, jj)
+                if cell in visited_unknown:
+                    continue
+                if not self._is_frontier_cell(cell, map_data):
+                    continue
+
+                region = Frontier()
+                queue = [cell]
+                while queue:
+                    curr = queue.pop(0)
+                    if curr in visited_unknown:
+                        continue
+                    visited_unknown.add(curr)
+                    if not self._is_frontier_cell(curr, map_data):
+                        continue
+                    region.add_cell(curr)
+                    for neighbor in map_data.get_voxel_neighbors(curr, connectivity=4):
+                        if neighbor not in visited_unknown and map_data.is_voxel_unknown(neighbor):
+                            queue.append(neighbor)
+                if region.size > 0:
+                    frontiers.append(region)
+        return frontiers
 
     
 
@@ -188,6 +261,19 @@ class FrontierUpdater:
                 closest_frontier = frontier
 
         return closest_frontier
+
+    def frontier_to_world_point(self, frontier):
+        """
+        Convert a frontier centroid from voxel coordinates to world coordinates.
+        """
+        if frontier is None:
+            return None
+        centroid = frontier.get_centroid()
+        if centroid is None:
+            return None
+        ii = int(round(centroid[0]))
+        jj = int(round(centroid[1]))
+        return self.occupancy_map.get_voxel_center(ii, jj)
 
     def get_closest_frontier_robot(self, robot_id):
         """

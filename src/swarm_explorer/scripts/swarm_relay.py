@@ -77,10 +77,13 @@ class SwarmRelay(object):
             self.map_pubs[robot_id].publish(msg)
 
     def _within_radius(self, sender_id: int, recipient_id: int) -> bool:
-        p1 = self.bots_dict.get(sender_id).pose.position
-        p2 = self.bots_dict.get(recipient_id).pose.position
-        if not p1 or not p2:
+        sender_msg = self.bots_dict.get(sender_id)
+        recipient_msg = self.bots_dict.get(recipient_id)
+        if sender_msg is None or recipient_msg is None:
             return False
+        # ExplorerStateMsg carries live position in odometry.
+        p1 = sender_msg.odometry.pose.pose.position
+        p2 = recipient_msg.odometry.pose.pose.position
         dx, dy = p1.x - p2.x, p1.y - p2.y
         return (dx * dx + dy * dy) ** 0.5 <= self.comm_radius
 

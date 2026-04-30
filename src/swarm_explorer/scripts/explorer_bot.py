@@ -46,6 +46,7 @@ class ExplorerBot:
         # storage for callbacks
         self.latest_map: OccupancyGrid2d = OccupancyGrid2d()
         self.latest_map.Initialize()
+        self._merged_maps = 0
         self.neighbor_states: Dict[int, Odometry] = {}  # robot_id → Odometry
 
         # publishers and subscribers
@@ -161,10 +162,42 @@ class ExplorerBot:
         Callback function for the map topic.
         This function will be called whenever a new message is received on the map topic.
         """
-        # You can add your processing logic here
-        neighbor_map = OccupancyGrid2d.from_msg(msg)
-        # TODO: turn this on alex ong no 🧢 its ncsry
-        # self.latest_map._map = OccupancyGrid2d.merge_maps(self.latest_map, neighbor_map)
+        if msg.robot_id == self.bot_id or self.latest_map is None:
+            return
+
+        width = msg.grid.info.width
+        height = msg.grid.info.height
+        if width != self.latest_map._x_num or height != self.latest_map._y_num:
+            rospy.logwarn_throttle(
+                2.0,
+                "Robot %d: map merge skip from robot %d (shape %dx%d != %dx%d).",
+                self.bot_id,
+                msg.robot_id,
+                width,
+                height,
+                self.latest_map._x_num,
+                self.latest_map._y_num,
+            )
+            return
+
+        data = np.array(msg.grid.data, dtype=np.int16).reshape((width, height))
+        known_mask = data >= 0  # -1 is unknown in nav_msgs/OccupancyGrid
+        if not np.any(known_mask):
+            return
+
+        probs = np.clip(data[known_mask].astype(np.float64) / 100.0, 0.01, 0.99)
+        incoming_log_odds = np.log(probs / (1.0 - probs))
+        fusion_gain = 0.25
+        self.latest_map._map[known_mask] = np.clip(
+            self.latest_map._map[known_mask] + fusion_gain * incoming_log_odds,
+            self.latest_map._free_threshold,
+            self.latest_map._occupied_threshold,
+        )
+
+        self._merged_maps += 1
+        rospy.loginfo_throttle(
+            2.0, "Robot %d: merged neighbor maps=%d", self.bot_id, self._merged_maps
+        )
 
     def _state_callback(self, msg):
         """
@@ -211,27 +244,26 @@ class ExplorerBot:
         self.curr_state = {"x": x, "y": y, "theta": theta}
         self.curr_odom = msg
 
-    def _get_current_pose(self):
-        """Return the current pose of the robot."""
-        # return pose if available
-        if self.curr_state is not None:
-            return self.curr_state
-
-        # or fall back to TF lookup:
+    def _get_current_pose_map(self):
+        """Return robot pose in the global `map` frame."""
         try:
             t = self.tfBuffer.lookup_transform(
-                f"robot_{self.bot_id}/odom",  # target frame
-                f"robot_{self.bot_id}/base_link",  # source frame
+                "map",  # target frame
+                f"robot_{self.bot_id}/base_footprint",  # source frame
                 rospy.Time(0),
-                rospy.Duration(1.0),
+                rospy.Duration(0.2),
             )
             x = t.transform.translation.x
             y = t.transform.translation.y
             q = t.transform.rotation
-            (_, _, theta) = tf_conversions.euler_from_quaternion([q.x, q.y, q.z, q.w])
+            (_, _, theta) = tf_conversions.transformations.euler_from_quaternion(
+                [q.x, q.y, q.z, q.w]
+            )
             return (x, y, theta)
         except Exception:
-            rospy.logerr("Failed to get current pose from TF")
+            rospy.logwarn_throttle(
+                2.0, "Robot %d: failed TF lookup for map-frame pose.", self.bot_id
+            )
             return None
 
     def signal_handler(self, sig, frame):
@@ -251,9 +283,14 @@ class ExplorerBot:
                 # Process the map data
                 rate.sleep()
                 continue
-            # Update frontiers based on the latest map
+            map_pose = self._get_current_pose_map()
+            if map_pose is None:
+                rate.sleep()
+                continue
+
+            # Update frontiers based on the latest map (map frame).
             self.frontier_updater.update_frontiers(
-                np.array([self.curr_state['x'], self.curr_state['y']])
+                np.array([map_pose[0], map_pose[1]])
             )
             # TODO: what message type is our map?
             map_msg = self.latest_map.to_msg()
@@ -262,22 +299,44 @@ class ExplorerBot:
 
             # Find target frontier
             best_frontier = self.frontier_updater.get_best_frontier(
-                np.array([self.curr_state["x"], self.curr_state["y"]])
+                np.array([map_pose[0], map_pose[1]])
+            )
+            rospy.loginfo_throttle(
+                2.0,
+                "Robot %d: frontiers=%d",
+                self.bot_id,
+                len(self.frontier_updater.frontiers),
             )
             if best_frontier is None:
+                # Still publish state so relay can track this robot.
+                state_msg = ExplorerStateMsg()
+                state_msg.robot_id = self.bot_id
+                state_msg.odometry = self.curr_odom
+                self.pub_state.publish(state_msg)
+
+                # Bootstrap exploration: slow spiral to discover free space/frontiers.
+                search_cmd = Twist()
+                search_cmd.linear.x = 0.04
+                search_cmd.angular.z = 0.35
+                self.controller.cmd(search_cmd)
+                rospy.loginfo_throttle(
+                    2.0, "Robot %d: no frontier yet, running spiral search.", self.bot_id
+                )
+                rate.sleep()
                 continue
 
             # Call to the controller
+            frontier_target = self.frontier_updater.frontier_to_world_point(best_frontier)
             true_neighbor_states = {
                 k: v
                 for k, v in self.neighbor_states.items()
                 if (rospy.Time.now() - v.odometry.header.stamp).to_sec() < self.max_neighbor_age
             }
             ref_vel = self.controller.calc_reference_vels(
-                curr_state=np.array([self.curr_state['x'], self.curr_state['y'], self.curr_state['theta']]), # current state
+                curr_state=np.array([map_pose[0], map_pose[1], map_pose[2]]), # map-frame state
                 latest_map=self.latest_map, # latest map
                 neighbor_states=true_neighbor_states, # neighbor states
-                best_frontier=best_frontier, # best frontier
+                frontier_target=frontier_target, # best frontier world target
             )
             self.controller.step_control(
                 target_state=ref_vel,  # open loop input

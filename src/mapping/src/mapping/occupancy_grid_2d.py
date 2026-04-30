@@ -22,6 +22,7 @@ import numpy as np
 class OccupancyGrid2d(object):
     def __init__(self):
         self._intialized = False
+        self._update_count = 0
 
         # Set up tf buffer and listener.
         self._tf_buffer = tf2_ros.Buffer()
@@ -110,6 +111,10 @@ class OccupancyGrid2d(object):
             rospy.logerr(f"{node_ns}: error computing resolutions -> {e}")
             return False
 
+        # Optional visualization load controls.
+        # self._vis_max_points = rospy.get_param(f"{base}/vis/max_points", 1200)
+        # self._vis_show_unknown = rospy.get_param(f"{base}/vis/show_unknown", False)
+
         return True
 
 
@@ -158,14 +163,24 @@ class OccupancyGrid2d(object):
         # assuming that the turtlebot is on the ground plane.
         sensor_x = pose.transform.translation.x
         sensor_y = pose.transform.translation.y
-        if abs(pose.transform.translation.z) > 0.05:
-            rospy.logwarn("%s: Turtlebot is not on ground plane.", self._name)
+        # base_scan is above the ground plane in Turtlebot models, so only warn for
+        # unexpectedly large vertical offsets.
+        if abs(pose.transform.translation.z) > 0.30:
+            rospy.logwarn_throttle(2.0, "%s: Turtlebot sensor z-offset is large (z=%.3f).",
+                                   self._name, pose.transform.translation.z)
 
         (roll, pitch, yaw) = tf.transformations.euler_from_quaternion(
             [pose.transform.rotation.x, pose.transform.rotation.y,
              pose.transform.rotation.z, pose.transform.rotation.w])
         if abs(roll) > 0.1 or abs(pitch) > 0.1:
             rospy.logwarn("%s: Turtlebot roll/pitch is too large.", self._name)
+
+        # Ensure the robot cell itself is treated as free so frontier search
+        # can grow from the current pose instead of stalling at unknown.
+        sensor_voxel = self.point_to_voxel(sensor_x, sensor_y)
+        self._map[sensor_voxel] = max(
+            self._map[sensor_voxel] + self._free_update, self._free_threshold
+        )
         
         # try:
         #     tframe = self._tf_buffer.lookup_transform("map", self.sensor_frame, rospy.Time(0), rospy.Duration(0.1))
@@ -224,12 +239,20 @@ class OccupancyGrid2d(object):
                 # Update the log-odds value at the final voxel.
                 self._map[voxel_final] = min(self._map[voxel_final] + self._occupied_update, self._occupied_threshold)
                 for voxel in voxels:
+                    if voxel[0] >= self._x_num or voxel[1] >= self._y_num:
+                        rospy.logwarn("%s: Voxel in list out of bounds: (%d, %d) and voxel_final: (%d, %d)", 
+                                    self._name, voxel[0], voxel[1], voxel_final[0], voxel_final[1])
+                        continue
                     if voxel != voxel_final:
                         self._map[voxel] = max(self._map[voxel] + self._free_update, self._free_threshold)
                 
 
         # Visualize.
         self.visualize()
+        self._update_count += 1
+
+    def get_update_count(self):
+        return self._update_count
 
     def is_fully_known(self):
         """
@@ -465,6 +488,8 @@ class OccupancyGrid2d(object):
         m.id = 0
         m.type = Marker.CUBE_LIST
         m.action = Marker.ADD
+        m.pose.orientation.w = 1.0
+        m.color.a = 1.0
         m.scale.x = self._x_res
         m.scale.y = self._y_res
         m.scale.z = 0.01
@@ -476,5 +501,4 @@ class OccupancyGrid2d(object):
 
                 m.points.append(p)
                 m.colors.append(self.colormap(ii, jj))
-
         self._vis_pub.publish(m)

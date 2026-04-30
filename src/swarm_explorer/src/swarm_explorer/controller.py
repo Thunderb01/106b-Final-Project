@@ -65,6 +65,13 @@ class TurtlebotController(object):
         self.obstacle_weight = obstacle_weight
         self.wall_weight = wall_weight
         self.frontier_weight = frontier_weight
+        # Keep immutable base weights; use scaled locals each control step.
+        self.base_cohesion_weight = cohesion_weight
+        self.base_separation_weight = separation_weight
+        self.base_alignment_weight = alignment_weight
+        self.base_obstacle_weight = obstacle_weight
+        self.base_wall_weight = wall_weight
+        self.base_frontier_weight = frontier_weight
         # init velocity components
         self.cohesion_vel = np.zeros(2)  # (x_dot, y_dot)
         self.separation_vel = np.zeros(2)  # (x_dot, y_dot)
@@ -84,6 +91,8 @@ class TurtlebotController(object):
         self.integral = np.zeros(2)
         self.length = 0.3
         self.env_config = env_config
+        self.emergency_turn = 0.0
+        self.frontier_weight_scale = 1.0
         
         # Initialize plotting variables
         self.actual_positions = []
@@ -118,32 +127,61 @@ class TurtlebotController(object):
         """
         Calculate the flocking velocity based on the positions of the neighbors.
         """
-        # Wall velocity
+        self.flock_vel = np.zeros(2)
+
+        # Wall repulsion velocity (activate before collision).
         x_min, x_max, y_min, y_max = latest_map.get_limits()
-        self.wall_vel = np.array(
-            [
-                -1 if self.state[0] < x_min else 1 if self.state[0] > x_max else 0,
-                -1 if self.state[1] < y_min else 1 if self.state[1] > y_max else 0,
-            ]
-        )
-        self.flock_vel += self.wall_weight * self.wall_vel
+        margin = max(self.collision_radius, 0.8)
+        wx = 0.0
+        wy = 0.0
+
+        if self.state[0] < (x_min + margin):
+            wx = (x_min + margin - self.state[0]) / margin
+        elif self.state[0] > (x_max - margin):
+            wx = -(self.state[0] - (x_max - margin)) / margin
+
+        if self.state[1] < (y_min + margin):
+            wy = (y_min + margin - self.state[1]) / margin
+        elif self.state[1] > (y_max - margin):
+            wy = -(self.state[1] - (y_max - margin)) / margin
+
+        self.wall_vel = np.array([wx, wy])
+        wall_norm = np.linalg.norm(self.wall_vel)
+        if wall_norm > 0:
+            self.wall_vel = self.wall_vel / wall_norm
         
         # Obstacle velocity
+        obstacle_query_radius = max(self.collision_radius, 1.5)
         surrounding_obstacles = latest_map.get_surrounding_obstacles(
-            self.state[:2], self.collision_radius, is_point=True
+            self.state[:2], obstacle_query_radius, is_point=True
         )
         obstacle_pos, obstacle_dist = (
-            surrounding_obstacles[0] if len(surrounding_obstacles) > 0 else (None, 0)
+            surrounding_obstacles[0] if len(surrounding_obstacles) > 0 else (None, float("inf"))
         )
-        if obstacle_pos is not None:
-            self.obstacle_vel = np.array(
-                [self.state[0] - obstacle_pos[0], self.state[1] - obstacle_pos[1]]
-            )
-            self.obstacle_vel = self.obstacle_vel / np.linalg.norm(self.obstacle_vel)
+        obstacle_weight_local = self.base_obstacle_weight
+        if len(surrounding_obstacles) > 0:
+            repulsion = np.zeros(2)
+            for obstacle_point, dist in surrounding_obstacles:
+                away = np.array(
+                    [self.state[0] - obstacle_point[0], self.state[1] - obstacle_point[1]]
+                )
+                away_norm = np.linalg.norm(away)
+                if away_norm <= 1e-6:
+                    continue
+                # Nearer occupied cells contribute more repulsion.
+                repulsion += (away / away_norm) / max(dist, 0.05)
+
+            repulsion_norm = np.linalg.norm(repulsion)
+            if repulsion_norm > 0:
+                self.obstacle_vel = repulsion / repulsion_norm
+            else:
+                self.obstacle_vel = np.zeros(2)
+
+            proximity = max(obstacle_query_radius - obstacle_dist, 0.0) / obstacle_query_radius
+            obstacle_weight_local *= (1.0 + 3.5 * proximity)
         else:
             self.obstacle_vel = np.zeros(2)
-            self.obstacle_weight = 0.0
-        self.flock_vel += self.obstacle_weight * self.obstacle_vel
+            obstacle_weight_local = 0.0
 
         # Flock Velocity Calculation if neighbors
         if len(neighbor_states) == 0:
@@ -176,38 +214,49 @@ class TurtlebotController(object):
             if np.linalg.norm(self.alignment_vel) > 0:
                 self.alignment_vel = self.alignment_vel / np.linalg.norm(self.alignment_vel)
 
-        dynamic_scale = (self.collision_radius - obstacle_dist) / self.cohesion_radius
-        self.obstacle_weight *= dynamic_scale
-        self.alignment_weight *= max(1 - 2 * dynamic_scale, 0)
-        self.cohesion_weight *= max(1 - 2 * dynamic_scale, 0)
-        self.frontier_weight *= max(1 - 2 * dynamic_scale, 0)
+        dynamic_scale = np.clip(
+            (self.collision_radius - obstacle_dist) / max(self.cohesion_radius, 1e-3),
+            0.0,
+            1.0,
+        )
+        alignment_weight_local = self.base_alignment_weight * max(1 - 2 * dynamic_scale, 0)
+        separation_weight_local = self.base_separation_weight
+        wall_weight_local = self.base_wall_weight
+        # Reduce frontier attraction near obstacles so avoidance dominates.
+        self.frontier_weight_scale = max(1.0 - 0.9 * dynamic_scale, 0.1)
 
         self.flock_vel = flock_vel = (
-            self.flock_vel
-            # + self.cohesion_weight * self.cohesion_vel
-            + self.alignment_weight * self.alignment_vel
-            + self.separation_weight * self.separation_vel
-            + self.wall_weight * self.wall_vel
-            + self.obstacle_weight * self.obstacle_vel
+            # + self.base_cohesion_weight * self.cohesion_vel
+            alignment_weight_local * self.alignment_vel
+            + separation_weight_local * self.separation_vel
+            + wall_weight_local * self.wall_vel
+            + obstacle_weight_local * self.obstacle_vel
         )  # (x_dot, y_dot)
+
+        # Emergency behavior: when very close to an obstacle, prioritize turning away.
+        self.emergency_turn = 0.0
+        if obstacle_dist < max(0.35, 0.5 * self.collision_radius):
+            self.emergency_turn = np.sign(
+                self.obstacle_vel[0] * np.sin(self.state[2]) - self.obstacle_vel[1] * np.cos(self.state[2])
+            )
         # rospy.loginfo(f"Flock velocity: {flock_vel}")
 
-    def _calc_frontier_vel(self, best_frontier):
+    def _calc_frontier_vel(self, frontier_target):
         """
         Calculate the velocity towards the target position.
         """
-        if best_frontier is None:
+        if frontier_target is None:
             self.frontier_vel = np.zeros(2)
             return
-        self.frontier_vel = (
-            self.frontier_weight
-            * (np.array(best_frontier.get_centroid()) - self.state[:2])
-            * (np.isclose(np.linalg.norm(self.separation_vel), 0.0))
-        )
+        to_frontier = np.array(frontier_target) - self.state[:2]
+        norm = np.linalg.norm(to_frontier)
+        if norm > 1e-6:
+            to_frontier = to_frontier / norm
+        self.frontier_vel = (self.frontier_weight * self.frontier_weight_scale) * to_frontier
         # rospy.loginfo(f"Frontier velocity: {self.frontier_vel}")
 
     def calc_reference_vels(
-        self, curr_state, latest_map, neighbor_states, best_frontier
+        self, curr_state, latest_map, neighbor_states, frontier_target
     ) -> np.ndarray:
         """
         Calculate the control input based on Boyd's model. Update the robot's
@@ -217,7 +266,7 @@ class TurtlebotController(object):
             curr_state : current state of the robot in [x, y, theta] configuration space.
             latest_map : latest map of the environment.
             neighbor_states : states of the neighboring robots.
-            best_frontier : best frontier to explore.
+            frontier_target : best frontier target point in world coordinates.
         Returns
             ref_velocities : reference velocities for the robot in [linear, angular] configuration space.
         """
@@ -226,7 +275,7 @@ class TurtlebotController(object):
         self.state = curr_state
         self._calc_flock_vel(latest_map=latest_map, neighbor_states=neighbor_states)
         # rospy.loginfo(f"Flock velocity: {self.flock_vel}")
-        self._calc_frontier_vel(best_frontier=best_frontier)
+        self._calc_frontier_vel(frontier_target=frontier_target)
         # rospy.loginfo(f"Frontier velocity: {self.frontier_vel}")
         target_vel = self.flock_vel + self.frontier_vel  # (x_dot, y_dot)
         # rospy.loginfo(f"Target velocity: {target_vel}")
@@ -250,6 +299,10 @@ class TurtlebotController(object):
         ref_velocities: np.ndarray = np.array(
             [np.linalg.norm(target_vel), self.angular_gain * theta_dot]
         )  # (linear, angular)
+
+        if abs(self.emergency_turn) > 0:
+            ref_velocities[0] = min(ref_velocities[0], 0.05)
+            ref_velocities[1] += 0.8 * self.emergency_turn
         
         # Clip velocities to ensure they stay within limits
         ref_velocities = self.env_config.clip_velocity(ref_velocities)

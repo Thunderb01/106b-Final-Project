@@ -32,17 +32,24 @@ class Frontier:
 
     def distance_to_frontier(self, cell):
         """
-        Calculate the distance from a cell to the nearest frontier.
-
-        Args:
-            cell: The cell to check
-            frontier: The frontier region
-
-        Returns:
-            Distance to the nearest frontier
+        Distance from voxel index ``cell`` to the nearest frontier cell, in **grid
+        index units** (Euclidean norm of integer index differences).
         """
         distances = [np.linalg.norm(np.array(cell) - np.array(f)) for f in self.cells]
         return min(distances) if distances else float("inf")
+
+    def min_world_distance_to(self, wx, wy, occ_map):
+        """
+        Minimum Euclidean distance in **meters** from world point (wx, wy) to the
+        center of any frontier voxel (uses ``occ_map.get_voxel_center``).
+        """
+        best = float("inf")
+        for f in self.cells:
+            ii = int(round(f[0]))
+            jj = int(round(f[1]))
+            cx, cy = occ_map.get_voxel_center(ii, jj)
+            best = min(best, float(np.hypot(wx - cx, wy - cy)))
+        return best
 
 class FrontierUpdater:
     def __init__(self, robot_id, occupancy_map, frontier_dist_wt, frontier_size_wt):
@@ -242,20 +249,21 @@ class FrontierUpdater:
 
     def get_best_frontier(self, point):
         """
-        Get the best frontier to a given cell.
+        Select a frontier by cost using world-frame distance in **meters** to the
+        nearest frontier cell center (consistent with ``collision_radius`` etc.).
         Args:
-            cell: The cell to check
+            point: ``(x, y)`` in map / world meters
         Returns:
-            Closest frontier region
+            Preferred ``Frontier`` region or ``None``
         """
-        cell = self.occupancy_map.point_to_voxel(point[0], point[1])
+        wx, wy = float(point[0]), float(point[1])
         closest_frontier = None
         min_cost = float("inf")
 
         for frontier in self.frontiers:
-            distance = frontier.distance_to_frontier(cell)
+            distance_m = frontier.min_world_distance_to(wx, wy, self.occupancy_map)
             size = frontier.size
-            cost = self.frontier_dist_wt * distance - self.frontier_size_wt * size
+            cost = self.frontier_dist_wt * distance_m - self.frontier_size_wt * size
             if cost < min_cost:
                 min_cost = cost
                 closest_frontier = frontier

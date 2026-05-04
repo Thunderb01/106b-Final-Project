@@ -3,7 +3,7 @@ import rospy
 import numpy as np
 import matplotlib.pyplot as plt
 import tf2_ros
-from geometry_msgs.msg import TransformStamped, Twist
+from geometry_msgs.msg import TransformStamped, Twist, PoseStamped
 import tf_conversions
 import signal
 import sys
@@ -266,6 +266,22 @@ class ExplorerBot:
             )
             return None
 
+    @staticmethod
+    def _map_pose_stamped_from_tuple(map_pose):
+        """Build `map` frame PoseStamped from (x, y, theta)."""
+        msg = PoseStamped()
+        msg.header.stamp = rospy.Time.now()
+        msg.header.frame_id = "map"
+        msg.pose.position.x = map_pose[0]
+        msg.pose.position.y = map_pose[1]
+        msg.pose.position.z = 0.0
+        q = tf_conversions.transformations.quaternion_from_euler(0, 0, map_pose[2])
+        msg.pose.orientation.x = q[0]
+        msg.pose.orientation.y = q[1]
+        msg.pose.orientation.z = q[2]
+        msg.pose.orientation.w = q[3]
+        return msg
+
     def signal_handler(self, sig, frame):
         """Handle Ctrl+C gracefully"""
         rospy.loginfo("Shutdown signal received. Plotting results and exiting...")
@@ -312,6 +328,8 @@ class ExplorerBot:
                 state_msg = ExplorerStateMsg()
                 state_msg.robot_id = self.bot_id
                 state_msg.odometry = self.curr_odom
+                state_msg.map_pose = self._map_pose_stamped_from_tuple(map_pose)
+                state_msg.pose = state_msg.map_pose.pose
                 self.pub_state.publish(state_msg)
 
                 # Bootstrap exploration: slow spiral to discover free space/frontiers.
@@ -346,8 +364,8 @@ class ExplorerBot:
             state_msg = ExplorerStateMsg()
             state_msg.robot_id = self.bot_id
             state_msg.odometry = self.curr_odom
-            # TODO: fill in flock velocity and frontier velocity from controller
-            # I think this means we do need to call controller first
+            state_msg.map_pose = self._map_pose_stamped_from_tuple(map_pose)
+            state_msg.pose = state_msg.map_pose.pose
             flock_twist = Twist()
             flock_twist.linear.x = self.controller.flock_vel[0]
             flock_twist.linear.y = self.controller.flock_vel[1]

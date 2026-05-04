@@ -111,7 +111,9 @@ class TurtlebotController(object):
         )
         # rospy.logwarn("Obstacles: %s", surrounding_obstacles)
         obstacle_pos, obstacle_dist = (
-            surrounding_obstacles[0] if len(surrounding_obstacles) > 0 else (None, 0)
+            surrounding_obstacles[0]
+            if len(surrounding_obstacles) > 0
+            else (None, float("inf"))
         )
         if obstacle_pos is not None:
             self.obstacle_vel = np.array(
@@ -168,7 +170,7 @@ class TurtlebotController(object):
                 away_norm = np.linalg.norm(away)
                 if away_norm <= 1e-6:
                     continue
-                # Nearer occupied cells contribute more repulsion.
+                # Nearer occupied cells contribute more repulsion (dist is meters).
                 repulsion += (away / away_norm) / max(dist, 0.05)
 
             repulsion_norm = np.linalg.norm(repulsion)
@@ -192,17 +194,13 @@ class TurtlebotController(object):
         else:    
             # TODO: see if we need to normalize the velocities
             # Cohesion velocity 
-            avg_cohesion_pos = self._calc_avg_pos_in_radius(
-                neighbor_states, self.cohesion_radius
-            )
+            avg_cohesion_pos = self._calc_avg_pos_in_radius(neighbor_states, self.cohesion_radius)
             self.cohesion_vel = avg_cohesion_pos - self.state[:2]
             if np.linalg.norm(self.cohesion_vel) > 0:
                 self.cohesion_vel = self.cohesion_vel / np.linalg.norm(self.cohesion_vel)
 
             # Separation velocity
-            avg_sep_pos = self._calc_avg_pos_in_radius(
-                neighbor_states, self.separation_radius
-            )
+            avg_sep_pos = self._calc_avg_pos_in_radius(neighbor_states, self.separation_radius)
             self.separation_vel = self.state[:2] - avg_sep_pos
             if np.linalg.norm(self.separation_vel) > 0:
                 self.separation_vel = self.separation_vel / np.linalg.norm(self.separation_vel)
@@ -371,36 +369,24 @@ class TurtlebotController(object):
         self.actual_velocities.append(curr_vel)
         self.target_velocities.append(target_vel)
 
+    @staticmethod
+    def _neighbor_xy_map(state: ExplorerStateMsg) -> np.ndarray:
+        """Neighbor (x, y) in map frame; prefer map_pose, else legacy pose."""
+        if state.map_pose.header.frame_id:
+            return np.array(
+                [state.map_pose.pose.position.x, state.map_pose.pose.position.y]
+            )
+        return np.array([state.pose.position.x, state.pose.position.y])
+
     def _calc_avg_pos_in_radius(
-        self, neighbor_states: Dict[int, ExplorerStateMsg], radius: float, use_actual=False
+        self, neighbor_states: Dict[int, ExplorerStateMsg], radius: float
     ):
         """
-        Calculate the average position of neighbors within a given radius using either actual states or calculated states.
+        Average map-frame position of neighbors within a given spatial radius (meters).
         """
-        if use_actual:
-            positions = np.array(
-                [
-                    np.array(
-                        [
-                            state.odom.pose.pose.position.x,
-                            state.odom.pose.pose.position.y,
-                        ]
-                    )
-                    for state in neighbor_states.values()
-                ]
-            )
-        else:
-            positions = np.array(
-                [
-                    np.array(
-                        [
-                            state.pose.position.x,
-                            state.pose.position.y,
-                        ]
-                    )
-                    for state in neighbor_states.values()
-                ]
-            )
+        positions = np.array(
+            [self._neighbor_xy_map(state) for state in neighbor_states.values()]
+        )
         distances = np.linalg.norm(positions - self.state[:2], axis=1)
         in_radius = positions[distances < radius]
         if len(in_radius) > 0:

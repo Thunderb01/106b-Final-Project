@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import rospy
 from swarm_explorer.msg import ExplorerStateMsg, ExplorerMapMsg
-import numpy as np
 
 
 class SwarmRelay(object):
@@ -81,11 +80,19 @@ class SwarmRelay(object):
         recipient_msg = self.bots_dict.get(recipient_id)
         if sender_msg is None or recipient_msg is None:
             return False
-        # ExplorerStateMsg carries live position in odometry.
-        p1 = sender_msg.odometry.pose.pose.position
-        p2 = recipient_msg.odometry.pose.pose.position
-        dx, dy = p1.x - p2.x, p1.y - p2.y
+        p1x, p1y = self._map_pose_xy(sender_msg)
+        p2x, p2y = self._map_pose_xy(recipient_msg)
+        dx, dy = p1x - p2x, p1y - p2y
         return (dx * dx + dy * dy) ** 0.5 <= self.comm_radius
+
+    @staticmethod
+    def _map_pose_xy(msg: ExplorerStateMsg):
+        """Planar position in a common frame; prefer map_pose, else odometry (legacy)."""
+        if msg.map_pose.header.frame_id:
+            p = msg.map_pose.pose.position
+            return p.x, p.y
+        p = msg.odometry.pose.pose.position
+        return p.x, p.y
 
     def shutdown(self):
         """

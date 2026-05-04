@@ -365,42 +365,46 @@ class OccupancyGrid2d(object):
                 neighbors.append((ni, nj))
 
         return neighbors
-    
+
     def get_surrounding_obstacles(self, position, radius=1, is_point=False):
         """
-        Returns surrounding obstacles within a given radius - in the shape of a diamond.
+        Returns occupied voxels within a diamond (Manhattan radius) in **cell** units,
+        whose circumscribing disk in **meters** is approximately ``radius``.
 
         Args:
-            position (tuple(float)): (x, y) 
-            radius (float): radius to search for obstacles
+            position (tuple(float)): (x, y) in world / map meters
+            radius (float): search radius in **meters** (same units as ``position``)
 
         Returns:
-            List of obstacle voxel indices and distances (tuples: (voxel, distance))
+            List of ``(voxel_index, dist_m)`` or ``(world_point, dist_m)`` when
+            ``is_point`` is True. ``dist_m`` is the Euclidean distance in **meters**
+            from ``position`` to the **center** of the obstacle voxel (or from robot
+            cell center consistency with ``get_voxel_center``).
         """
         voxel = self.point_to_voxel(position[0], position[1])
-        # rospy.loginfo(f"voxel: {voxel}")
-        # rospy.loginfo(f"position: {position}")
-
-
         ii, jj = voxel
         obstacles = []
-        # TODO: this only works for equal x_res and y_res
-        radius = int(radius / self._x_res)  # Adjust radius based on resolution
+        # Diamond radius in whole cells so the search region covers ``radius`` meters
+        # (conservative when x_res != y_res: use the finer resolution).
+        cell = min(self._x_res, self._y_res)
+        radius_cells = max(1, int(np.ceil(radius / cell)))
 
-        for dx in range(-radius, radius + 1):
-            for dy in range(-radius, radius + 1):
-                if abs(dx) + abs(dy) <= radius:
+        for dx in range(-radius_cells, radius_cells + 1):
+            for dy in range(-radius_cells, radius_cells + 1):
+                if abs(dx) + abs(dy) <= radius_cells:
                     ni, nj = ii + dx, jj + dy
                     if 0 <= ni < self._x_num and 0 <= nj < self._y_num:
                         if self.is_voxel_occupied((ni, nj)):
-                            dist = np.sqrt(dx**2 + dy**2)
-                            obstacles.append(((ni, nj), dist))
+                            cx, cy = self.get_voxel_center(ni, nj)
+                            dist_m = float(
+                                np.hypot(position[0] - cx, position[1] - cy)
+                            )
+                            if dist_m <= radius:
+                                obstacles.append(((ni, nj), dist_m))
         if not obstacles:
             return []
-        # Sort by distance
         obstacles.sort(key=lambda x: x[1])
 
-        # Return only the voxel indices, not the distances
         return obstacles if not is_point else [(self.get_voxel_center(*vox), dist) for vox, dist in obstacles]
     
     def is_voxel_free(self, voxel):

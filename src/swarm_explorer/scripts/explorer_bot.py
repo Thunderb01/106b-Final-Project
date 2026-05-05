@@ -7,6 +7,7 @@ from geometry_msgs.msg import TransformStamped, Twist, PoseStamped
 import tf_conversions
 import signal
 import sys
+from collections import deque
 
 from mapping.occupancy_grid_2d import OccupancyGrid2d
 from nav_msgs.msg import OccupancyGrid
@@ -61,6 +62,26 @@ class ExplorerBot:
         rospy.Subscriber(f"/robot_{self.bot_id}/odom/", Odometry, self._odom_callback)
         self.tfBuffer = tf2_ros.Buffer()
         self.tfListener = tf2_ros.TransformListener(self.tfBuffer)
+        self.frontier_hold_seconds = rospy.get_param("~frontier_hold_seconds", 4.0)
+        self.frontier_reached_radius = rospy.get_param("~frontier_reached_radius", 0.6)
+        self._held_frontier_target = None
+        self._held_frontier_until = rospy.Time(0)
+        self._pose_history = deque()
+        self._recovery_until = rospy.Time(0)
+        self._recovery_turn_sign = 1.0 if (self.bot_id % 2 == 0) else -1.0
+        self.stuck_window_sec = rospy.get_param("~stuck_window_sec", 12.0)
+        self.stuck_min_progress_m = rospy.get_param("~stuck_min_progress_m", 0.10)
+        self.recovery_duration_sec = rospy.get_param("~recovery_duration_sec", 1.2)
+        self.recovery_cooldown_sec = rospy.get_param("~recovery_cooldown_sec", 6.0)
+        self.recovery_linear_x = rospy.get_param("~recovery_linear_x", 0.08)
+        self.recovery_angular_z = rospy.get_param("~recovery_angular_z", 0.9)
+        self._recovery_cooldown_until = rospy.Time(0)
+        self._in_recovery = False
+        self._last_merge_time = rospy.Time(0)
+        self.map_publish_hz = rospy.get_param("~map_publish_hz", 1.0)
+        if self.map_publish_hz <= 0.0:
+            self.map_publish_hz = 1.0
+        self._last_map_pub_time = rospy.Time(0)
 
         # TODO: fill in these with the correct classes/parameters
         self.frontier_updater = FrontierUpdater(
@@ -162,6 +183,12 @@ class ExplorerBot:
         Callback function for the map topic.
         This function will be called whenever a new message is received on the map topic.
         """
+        rospy.loginfo_throttle(
+            2.0,
+            "Robot %d: received map msg from robot_%d",
+            self.bot_id,
+            msg.robot_id,
+        )
         if msg.robot_id == self.bot_id or self.latest_map is None:
             return
 
@@ -183,21 +210,78 @@ class ExplorerBot:
         data = np.array(msg.grid.data, dtype=np.int16).reshape((width, height))
         known_mask = data >= 0  # -1 is unknown in nav_msgs/OccupancyGrid
         if not np.any(known_mask):
+            rospy.loginfo_throttle(
+                2.0,
+                "Robot %d: map msg from robot_%d had no known cells.",
+                self.bot_id,
+                msg.robot_id,
+            )
             return
+
+        local_map = self.latest_map._map
+        local_known_before = int(
+            np.sum(
+                (local_map < self.latest_map._free_threshold)
+                | (local_map > self.latest_map._occupied_threshold)
+            )
+        )
 
         probs = np.clip(data[known_mask].astype(np.float64) / 100.0, 0.01, 0.99)
         incoming_log_odds = np.log(probs / (1.0 - probs))
         fusion_gain = 0.25
-        self.latest_map._map[known_mask] = np.clip(
-            self.latest_map._map[known_mask] + fusion_gain * incoming_log_odds,
-            self.latest_map._free_threshold,
-            self.latest_map._occupied_threshold,
+        # Keep merged values slightly outside unknown bounds so frontier/known
+        # checks classify them as known instead of "exactly threshold == unknown".
+        eps = 1e-3
+        local_map[known_mask] = np.clip(
+            local_map[known_mask] + fusion_gain * incoming_log_odds,
+            self.latest_map._free_threshold - eps,
+            self.latest_map._occupied_threshold + eps,
         )
+        local_known_after = int(
+            np.sum(
+                (local_map < self.latest_map._free_threshold)
+                | (local_map > self.latest_map._occupied_threshold)
+            )
+        )
+        known_gain = local_known_after - local_known_before
 
         self._merged_maps += 1
+        self._last_merge_time = rospy.Time.now()
         rospy.loginfo_throttle(
-            2.0, "Robot %d: merged neighbor maps=%d", self.bot_id, self._merged_maps
+            2.0,
+            "Robot %d: merged maps=%d (last from robot_%d, known +%d)",
+            self.bot_id,
+            self._merged_maps,
+            msg.robot_id,
+            known_gain,
         )
+
+    def _update_stuck_state(self, map_pose, has_frontier):
+        now = rospy.Time.now()
+        self._pose_history.append((now, map_pose[0], map_pose[1]))
+        window_start = now - rospy.Duration(self.stuck_window_sec)
+        while self._pose_history and self._pose_history[0][0] < window_start:
+            self._pose_history.popleft()
+
+        if not has_frontier or len(self._pose_history) < 2:
+            return
+
+        first = self._pose_history[0]
+        last = self._pose_history[-1]
+        progress = float(np.hypot(last[1] - first[1], last[2] - first[2]))
+        if progress < self.stuck_min_progress_m and now >= self._recovery_until:
+            if now < self._recovery_cooldown_until:
+                return
+            self._recovery_until = now + rospy.Duration(self.recovery_duration_sec)
+            self._recovery_cooldown_until = now + rospy.Duration(self.recovery_cooldown_sec)
+            self._recovery_turn_sign *= -1.0
+            self._pose_history.clear()
+            rospy.logwarn(
+                "Robot %d: low progress %.2fm in %.1fs, triggering recovery.",
+                self.bot_id,
+                progress,
+                self.stuck_window_sec,
+            )
 
     def _state_callback(self, msg):
         """
@@ -308,22 +392,62 @@ class ExplorerBot:
             self.frontier_updater.update_frontiers(
                 np.array([map_pose[0], map_pose[1]])
             )
-            # TODO: what message type is our map?
-            map_msg = self.latest_map.to_msg()
-            map_msg.robot_id = self.bot_id
-            self.pub_map.publish(map_msg)
+            now = rospy.Time.now()
+            if (
+                self._last_map_pub_time == rospy.Time(0)
+                or (now - self._last_map_pub_time).to_sec() >= (1.0 / self.map_publish_hz)
+            ):
+                map_msg = self.latest_map.to_msg()
+                map_msg.robot_id = self.bot_id
+                self.pub_map.publish(map_msg)
+                self._last_map_pub_time = now
 
             # Find target frontier
             best_frontier = self.frontier_updater.get_best_frontier(
                 np.array([map_pose[0], map_pose[1]])
             )
+            candidate_target = self.frontier_updater.frontier_to_world_point(best_frontier)
+            now = rospy.Time.now()
+
+            # Frontier persistence: hold a selected target briefly to avoid
+            # target thrashing that causes local spiraling.
+            if self._held_frontier_target is not None:
+                held_dist = np.linalg.norm(
+                    np.array([map_pose[0], map_pose[1]]) - np.array(self._held_frontier_target)
+                )
+                if held_dist < self.frontier_reached_radius or now >= self._held_frontier_until:
+                    self._held_frontier_target = None
+
+            if self._held_frontier_target is None and candidate_target is not None:
+                self._held_frontier_target = candidate_target
+                self._held_frontier_until = now + rospy.Duration(self.frontier_hold_seconds)
+
+            frontier_target = self._held_frontier_target
+            self._update_stuck_state(map_pose, frontier_target is not None)
+            neighbor_count = len(
+                {
+                    k: v
+                    for k, v in self.neighbor_states.items()
+                    if (rospy.Time.now() - v.odometry.header.stamp).to_sec() < self.max_neighbor_age
+                }
+            )
+            if neighbor_count > 0:
+                since_last_merge = (rospy.Time.now() - self._last_merge_time).to_sec()
+                if self._last_merge_time == rospy.Time(0) or since_last_merge > 8.0:
+                    rospy.logwarn_throttle(
+                        3.0,
+                        "Robot %d: %d neighbors but no recent map merges (last %.1fs ago).",
+                        self.bot_id,
+                        neighbor_count,
+                        since_last_merge if self._last_merge_time != rospy.Time(0) else -1.0,
+                    )
             rospy.loginfo_throttle(
                 2.0,
                 "Robot %d: frontiers=%d",
                 self.bot_id,
                 len(self.frontier_updater.frontiers),
             )
-            if best_frontier is None:
+            if frontier_target is None:
                 # Still publish state so relay can track this robot.
                 state_msg = ExplorerStateMsg()
                 state_msg.robot_id = self.bot_id
@@ -343,8 +467,22 @@ class ExplorerBot:
                 rate.sleep()
                 continue
 
+            now = rospy.Time.now()
+            if now < self._recovery_until:
+                recovery_cmd = Twist()
+                recovery_cmd.linear.x = self.recovery_linear_x
+                recovery_cmd.angular.z = self._recovery_turn_sign * self.recovery_angular_z
+                self.controller.cmd(recovery_cmd)
+                if not self._in_recovery:
+                    self._in_recovery = True
+                    rospy.loginfo("Robot %d: recovery maneuver active.", self.bot_id)
+                rate.sleep()
+                continue
+            elif self._in_recovery:
+                self._in_recovery = False
+                rospy.loginfo("Robot %d: recovery maneuver complete.", self.bot_id)
+
             # Call to the controller
-            frontier_target = self.frontier_updater.frontier_to_world_point(best_frontier)
             true_neighbor_states = {
                 k: v
                 for k, v in self.neighbor_states.items()

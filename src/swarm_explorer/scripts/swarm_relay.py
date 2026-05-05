@@ -25,6 +25,8 @@ class SwarmRelay(object):
         # will hold publishers per robot
         self.state_pubs = {}
         self.map_pubs = {}
+        self._active_links = set()
+        self._relayed_map_msgs = 0
 
         rospy.loginfo("Swarm relay node started")
         rospy.spin()
@@ -35,6 +37,23 @@ class SwarmRelay(object):
         The position is given in the message.
         """
         self.bots_dict[msg.robot_id] = msg  # TODO: any issues with pointer stuff?
+
+        # Track communication-link transitions for observability.
+        for robot_id in list(self.bots_dict):
+            if robot_id == msg.robot_id:
+                continue
+            pair = tuple(sorted((msg.robot_id, robot_id)))
+            in_range = self._within_radius(sender_id=msg.robot_id, recipient_id=robot_id)
+            if in_range and pair not in self._active_links:
+                self._active_links.add(pair)
+                rospy.loginfo(
+                    "Comm link established between robot_%d and robot_%d", pair[0], pair[1]
+                )
+            elif not in_range and pair in self._active_links:
+                self._active_links.remove(pair)
+                rospy.loginfo(
+                    "Comm link lost between robot_%d and robot_%d", pair[0], pair[1]
+                )
 
         # publish the message to all robots within the communication radius
         for robot_id in list(self.bots_dict):
@@ -57,7 +76,7 @@ class SwarmRelay(object):
         The map is given in the message.
         """
         if msg.robot_id not in self.bots_dict:
-            rospy.logwarn(f"Robot {msg.robot_id} not found in bots_dict")
+            rospy.logwarn("Robot %d not found in bots_dict", msg.robot_id)
             return
         
         # publish the message to all robots within the communication radius
@@ -71,9 +90,16 @@ class SwarmRelay(object):
             if robot_id not in self.map_pubs:
                 topic = f"/robot_{robot_id}/incoming/map"  # TODO: change topic name
                 self.map_pubs[robot_id] = rospy.Publisher(
-                    topic, ExplorerMapMsg, queue_size=1
+                    topic, ExplorerMapMsg, queue_size=5
                 )
             self.map_pubs[robot_id].publish(msg)
+            self._relayed_map_msgs += 1
+        rospy.loginfo_throttle(
+            2.0,
+            "Relay: map msgs relayed=%d (last from robot_%d)",
+            self._relayed_map_msgs,
+            msg.robot_id,
+        )
 
     def _within_radius(self, sender_id: int, recipient_id: int) -> bool:
         sender_msg = self.bots_dict.get(sender_id)

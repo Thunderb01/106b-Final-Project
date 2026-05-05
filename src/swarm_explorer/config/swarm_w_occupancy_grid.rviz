@@ -393,29 +393,29 @@ Visualization Manager:
       Use rainbow: true
       Value: true
     - Class: rviz/Marker
-      Enabled: false
-      Marker Topic: /robot_1/vis/map
-      Name: Marker
+      Enabled: true
+      Marker Topic: /robot_1/vis/explorer_map
+      Name: ExplorerMap1
       Namespaces:
         {}
-      Queue Size: 100
-      Value: false
+      Queue Size: 5
+      Value: true
     - Class: rviz/Marker
-      Enabled: false
-      Marker Topic: /robot_2/vis/map
-      Name: Marker
+      Enabled: true
+      Marker Topic: /robot_2/vis/explorer_map
+      Name: ExplorerMap2
       Namespaces:
         {}
-      Queue Size: 100
-      Value: false
+      Queue Size: 5
+      Value: true
     - Class: rviz/Marker
-      Enabled: false
-      Marker Topic: /robot_3/vis/map
-      Name: Marker
+      Enabled: true
+      Marker Topic: /robot_3/vis/explorer_map
+      Name: ExplorerMap3
       Namespaces:
         {}
-      Queue Size: 100
-      Value: false
+      Queue Size: 5
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

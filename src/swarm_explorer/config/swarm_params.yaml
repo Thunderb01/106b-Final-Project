@@ -10,13 +10,13 @@ cohesion_radius: 1.5
 separation_radius: 0.65
 alignment_radius: 1.5
 collision_radius: 1.7 # obstacle avoidance radius
-# Weights (tuned for stronger obstacle avoidance, weaker flock pull)
-alignment_weight: 0.2
-cohesion_weight: 0.12
-separation_weight: 0.45
+# Weights (tuned to reduce over-separation and encourage exploration progress)
+alignment_weight: 0.15
+cohesion_weight: 0.10
+separation_weight: 0.20
 wall_weight: 0.8
-frontier_weight: 0.08
-obstacle_weight: 2.4
+frontier_weight: 0.14
+obstacle_weight: 2.2
 frontier_dist_weight: 0.001
 frontier_size_weight: 1.0
 # define initial poses for each robot

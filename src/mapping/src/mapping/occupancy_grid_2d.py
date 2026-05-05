@@ -23,6 +23,7 @@ class OccupancyGrid2d(object):
     def __init__(self):
         self._intialized = False
         self._update_count = 0
+        self._last_vis_pub_time = None
 
         # Set up tf buffer and listener.
         self._tf_buffer = tf2_ros.Buffer()
@@ -112,8 +113,9 @@ class OccupancyGrid2d(object):
             return False
 
         # Optional visualization load controls.
-        # self._vis_max_points = rospy.get_param(f"{base}/vis/max_points", 1200)
-        # self._vis_show_unknown = rospy.get_param(f"{base}/vis/show_unknown", False)
+        self._vis_publish_hz = float(rospy.get_param(f"{base}/vis/publish_hz", 2.0))
+        if self._vis_publish_hz <= 0.0:
+            self._vis_publish_hz = 2.0
 
         return True
 
@@ -287,12 +289,17 @@ class OccupancyGrid2d(object):
         msg.grid.info.origin.position.z = 0.0
         msg.grid.info.origin.orientation.w = 1.0  # no rotation
 
-        # Convert log-odds map to probability (0-100) or -1 for unknown
+        # Convert log-odds map to probability (0-100) or -1 for unknown.
+        # For sharing/fusion, treat only near-zero log-odds as unknown so
+        # partially observed evidence is transmitted to neighbors.
+        unknown_log_odds_eps = float(
+            rospy.get_param(f"{rospy.get_name()}/comm/unknown_log_odds_eps", 1e-3)
+        )
         data = []
         for ii in range(self._x_num):
             for jj in range(self._y_num):
                 logodds = self._map[ii, jj]
-                if self.is_voxel_unknown((ii, jj)):
+                if abs(logodds) < unknown_log_odds_eps:
                     data.append(-1)
                 else:
                     p = self.LogOddsToProbability(logodds)
@@ -471,13 +478,24 @@ class OccupancyGrid2d(object):
 
     # Colormap to take log odds at a voxel to a RGBA color.
     def colormap(self, ii, jj):
-        p = self.LogOddsToProbability(self._map[ii, jj])
+        log_odds = self._map[ii, jj]
+        # For visualization, treat only near-zero log-odds as unknown.
+        # This avoids rendering nearly all updated cells as unknown gray.
+        if abs(log_odds) < 1e-3:
+            c = ColorRGBA()
+            c.r = 0.35
+            c.g = 0.35
+            c.b = 0.35
+            c.a = 0.12
+            return c
+
+        p = self.LogOddsToProbability(log_odds)
 
         c = ColorRGBA()
         c.r = p
         c.g = 0.1
         c.b = 1.0 - p
-        c.a = 0.75
+        c.a = 0.80
         return c
 
     # Visualize the map as a collection of flat cubes instead of
@@ -485,8 +503,16 @@ class OccupancyGrid2d(object):
     # flexibility for things like color maps and stuff.
     # See http://wiki.ros.org/rviz/DisplayTypes/Marker for a brief tutorial.
     def visualize(self):
+        # Throttle marker publishing to keep RViz responsive on slower machines.
+        now = rospy.Time.now()
+        if self._last_vis_pub_time is not None:
+            dt = (now - self._last_vis_pub_time).to_sec()
+            if dt < (1.0 / self._vis_publish_hz):
+                return
+        self._last_vis_pub_time = now
+
         m = Marker()
-        m.header.stamp = rospy.Time.now()
+        m.header.stamp = now
         m.header.frame_id = self._fixed_frame
         m.ns = "map"
         m.id = 0

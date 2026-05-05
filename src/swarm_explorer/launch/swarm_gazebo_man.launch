@@ -235,6 +235,7 @@
       <param name="update/occupied_threshold" value="0.97" />
       <param name="update/free" value="0.3" />
       <param name="update/free_threshold" value="0.03" />
+      <param name="vis/publish_hz" value="0.3" />
 
       <param name="random_downsample" value="0.1" />
     </node>
@@ -266,6 +267,7 @@
       <param name="update/occupied_threshold" value="0.97" />
       <param name="update/free" value="0.3" />
       <param name="update/free_threshold" value="0.03" />
+      <param name="vis/publish_hz" value="0.3" />
 
       <param name="random_downsample" value="0.1" />
     </node>
@@ -297,6 +299,7 @@
       <param name="update/occupied_threshold" value="0.97" />
       <param name="update/free" value="0.3" />
       <param name="update/free_threshold" value="0.03" />
+      <param name="vis/publish_hz" value="0.3" />
 
       <param name="random_downsample" value="0.1" />
     </node>

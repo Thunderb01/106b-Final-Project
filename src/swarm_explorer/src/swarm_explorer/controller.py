@@ -187,7 +187,7 @@ class TurtlebotController(object):
 
         # Flock Velocity Calculation if neighbors
         if len(neighbor_states) == 0:
-            rospy.logwarn("Robot %d: no neighbors found", self.tb_id)
+            # rospy.logwarn("Robot %d: no neighbors found", self.tb_id)
             self.cohesion_vel = np.zeros(2)
             self.separation_vel = np.zeros(2)
             self.alignment_vel = np.zeros(2)
@@ -291,7 +291,7 @@ class TurtlebotController(object):
         self.state[:2] += target_vel
         self.state[2] = target_theta
         self.state_dot[:2] = target_vel
-        self.state[2] = theta_dot
+        self.state_dot[2] = theta_dot
         
         # Calculate reference velocities with normalized linear velocity
         ref_velocities: np.ndarray = np.array(
@@ -392,12 +392,16 @@ class TurtlebotController(object):
         if len(in_radius) > 0:
             return np.mean(in_radius, axis=0)
         else:
-            return np.zeros(2)
+            # Neutral: no neighbors in radius => no cohesion/separation pull.
+            return self.state[:2]
 
     def _calc_avg_flock_vel(
         self, neighbor_states: Dict[int, ExplorerStateMsg], radius: float
     ):
-        """Calculate the average flock velocity of neighbors within a given radius."""
+        """Average neighbor flock velocity for neighbors within spatial radius."""
+        positions = np.array(
+            [self._neighbor_xy_map(state) for state in neighbor_states.values()]
+        )
         velocities = np.array(
             [
                 np.array(
@@ -409,7 +413,7 @@ class TurtlebotController(object):
                 for state in neighbor_states.values()
             ]
         )
-        distances = np.linalg.norm(velocities - self.state_dot[:2], axis=1)
+        distances = np.linalg.norm(positions - self.state[:2], axis=1)
         in_radius = velocities[distances < radius]
         if len(in_radius) > 0:
             return np.mean(in_radius, axis=0)

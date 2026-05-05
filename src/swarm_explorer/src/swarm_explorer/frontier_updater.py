@@ -125,9 +125,7 @@ class FrontierUpdater:
                 unknown_cells,
                 start_log_odds if start_log_odds is not None else float("nan"),
             )
-        rospy.loginfo_throttle(
-            2.0, "Robot %d frontier regions found: %d", self.robot_id, len(self.frontiers)
-        )
+        # Frontier count is available in explorer_bot logs; avoid duplicate spam here.
 
         # Filter and process frontiers (optional)
         self.filter_frontiers()

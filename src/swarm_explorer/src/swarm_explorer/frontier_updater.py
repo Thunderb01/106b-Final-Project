@@ -61,6 +61,20 @@ class FrontierUpdater:
         # Weights for frontier selection
         self.frontier_dist_wt: float = frontier_dist_wt
         self.frontier_size_wt: float = frontier_size_wt
+        # Keep frontier choice distance-first; large regions only get a bounded
+        # bonus so one giant unknown area does not attract every robot.
+        self.frontier_min_region_size = int(
+            rospy.get_param(
+                "~frontier_min_region_size",
+                rospy.get_param("/frontier_min_region_size", 5),
+            )
+        )
+        self.frontier_size_bonus_scale_m = float(
+            rospy.get_param(
+                "~frontier_size_bonus_scale_m",
+                rospy.get_param("/frontier_size_bonus_scale_m", 0.35),
+            )
+        )
 
         # obsolete
         # if map_type == "occupancy":
@@ -255,31 +269,87 @@ class FrontierUpdater:
             Preferred ``Frontier`` region or ``None``
         """
         wx, wy = float(point[0]), float(point[1])
+        eligible_frontiers = [
+            f for f in self.frontiers if f.size >= self.frontier_min_region_size
+        ]
+        if not eligible_frontiers:
+            eligible_frontiers = self.frontiers
+
         closest_frontier = None
         min_cost = float("inf")
 
-        for frontier in self.frontiers:
+        for frontier in eligible_frontiers:
             distance_m = frontier.min_world_distance_to(wx, wy, self.occupancy_map)
-            size = frontier.size
-            cost = self.frontier_dist_wt * distance_m - self.frontier_size_wt * size
+            # Saturated size bonus in "meters of virtual distance reduction".
+            # log1p() prevents giant regions from dominating selection.
+            size_bonus_m = (
+                self.frontier_size_bonus_scale_m
+                * max(self.frontier_size_wt, 0.0)
+                * np.log1p(float(frontier.size))
+            )
+            cost = self.frontier_dist_wt * distance_m - size_bonus_m
             if cost < min_cost:
                 min_cost = cost
                 closest_frontier = frontier
 
         return closest_frontier
 
-    def frontier_to_world_point(self, frontier):
+    def frontier_to_world_point(self, frontier, reference_world_point=None):
         """
-        Convert a frontier centroid from voxel coordinates to world coordinates.
+        Convert a frontier region to a concrete world target point.
+        If ``reference_world_point`` is provided, pick the frontier cell nearest
+        to that point (more stable than centroids that can fall in explored space).
         """
         if frontier is None:
             return None
-        centroid = frontier.get_centroid()
-        if centroid is None:
+        if not frontier.cells:
             return None
+
+        if reference_world_point is not None:
+            wx, wy = float(reference_world_point[0]), float(reference_world_point[1])
+            best_cell = None
+            best_dist = float("inf")
+            for cell in frontier.cells:
+                ii = int(round(cell[0]))
+                jj = int(round(cell[1]))
+                cx, cy = self.occupancy_map.get_voxel_center(ii, jj)
+                d = float(np.hypot(wx - cx, wy - cy))
+                if d < best_dist:
+                    best_dist = d
+                    best_cell = (ii, jj)
+            if best_cell is not None:
+                return self._frontier_approach_point(best_cell, wx, wy)
+
+        # Fallback: centroid if no reference point is available.
+        centroid = frontier.get_centroid()
         ii = int(round(centroid[0]))
         jj = int(round(centroid[1]))
-        return self.occupancy_map.get_voxel_center(ii, jj)
+        if reference_world_point is not None:
+            wx, wy = float(reference_world_point[0]), float(reference_world_point[1])
+        else:
+            wx, wy = self.occupancy_map.get_voxel_center(ii, jj)
+        return self._frontier_approach_point((ii, jj), wx, wy)
+
+    def _frontier_approach_point(self, frontier_cell, wx, wy):
+        """
+        Return a world target near a frontier cell but in traversable free space.
+        Choosing unknown-cell centers directly can cause orbiting at the boundary.
+        """
+        neighbors = self.occupancy_map.get_voxel_neighbors(frontier_cell, connectivity=4)
+        free_neighbors = [n for n in neighbors if self._is_likely_free(n, self.occupancy_map)]
+        if not free_neighbors:
+            return self.occupancy_map.get_voxel_center(frontier_cell[0], frontier_cell[1])
+
+        best_neighbor = None
+        best_dist = float("inf")
+        for n in free_neighbors:
+            cx, cy = self.occupancy_map.get_voxel_center(n[0], n[1])
+            d = float(np.hypot(wx - cx, wy - cy))
+            if d < best_dist:
+                best_dist = d
+                best_neighbor = n
+
+        return self.occupancy_map.get_voxel_center(best_neighbor[0], best_neighbor[1])
 
     def get_closest_frontier_robot(self, robot_id):
         """

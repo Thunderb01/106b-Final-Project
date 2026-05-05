@@ -116,6 +116,20 @@ class OccupancyGrid2d(object):
         self._vis_publish_hz = float(rospy.get_param(f"{base}/vis/publish_hz", 2.0))
         if self._vis_publish_hz <= 0.0:
             self._vis_publish_hz = 2.0
+        # Max-range scans usually indicate "no obstacle hit"; avoid marking
+        # endpoints occupied when range is very close to range_max.
+        self._max_range_hit_margin = float(
+            rospy.get_param(f"{base}/scan/max_range_hit_margin", 0.05)
+        )
+        if self._max_range_hit_margin < 0.0:
+            self._max_range_hit_margin = 0.0
+        # Cells with near-zero log-odds are considered "unknown" for
+        # frontier extraction and map sharing.
+        self._unknown_log_odds_eps = float(
+            rospy.get_param(f"{base}/unknown/log_odds_eps", 0.15)
+        )
+        if self._unknown_log_odds_eps < 0.0:
+            self._unknown_log_odds_eps = 0.0
 
         return True
 
@@ -238,14 +252,22 @@ class OccupancyGrid2d(object):
                 # print("voxel_final out of bounds")
                 continue
             else:
-                # Update the log-odds value at the final voxel.
-                self._map[voxel_final] = min(self._map[voxel_final] + self._occupied_update, self._occupied_threshold)
+                hit_obstacle = (msg.range_max - r) > self._max_range_hit_margin
+                if hit_obstacle:
+                    # Endpoint is a measured obstacle hit.
+                    self._map[voxel_final] = min(
+                        self._map[voxel_final] + self._occupied_update,
+                        self._occupied_threshold,
+                    )
                 for voxel in voxels:
                     if voxel[0] >= self._x_num or voxel[1] >= self._y_num:
                         rospy.logwarn("%s: Voxel in list out of bounds: (%d, %d) and voxel_final: (%d, %d)", 
                                     self._name, voxel[0], voxel[1], voxel_final[0], voxel_final[1])
                         continue
-                    if voxel != voxel_final:
+                    # For max-range/no-hit rays, treat endpoint as free too.
+                    if hit_obstacle and voxel == voxel_final:
+                        continue
+                    else:
                         self._map[voxel] = max(self._map[voxel] + self._free_update, self._free_threshold)
                 
 
@@ -292,14 +314,11 @@ class OccupancyGrid2d(object):
         # Convert log-odds map to probability (0-100) or -1 for unknown.
         # For sharing/fusion, treat only near-zero log-odds as unknown so
         # partially observed evidence is transmitted to neighbors.
-        unknown_log_odds_eps = float(
-            rospy.get_param(f"{rospy.get_name()}/comm/unknown_log_odds_eps", 1e-3)
-        )
         data = []
         for ii in range(self._x_num):
             for jj in range(self._y_num):
                 logodds = self._map[ii, jj]
-                if abs(logodds) < unknown_log_odds_eps:
+                if abs(logodds) < self._unknown_log_odds_eps:
                     data.append(-1)
                 else:
                     p = self.LogOddsToProbability(logodds)
@@ -444,10 +463,7 @@ class OccupancyGrid2d(object):
         Returns:
             bool: True if the voxel is unknown, False otherwise
         """
-        return (
-            self._map[voxel[0], voxel[1]] >= self._free_threshold and 
-            self._map[voxel[0], voxel[1]] <= self._occupied_threshold
-        )
+        return abs(self._map[voxel[0], voxel[1]]) < self._unknown_log_odds_eps
     
     @staticmethod
     def merge_maps(map1, map2, clip_min=-10.0, clip_max=10.0):

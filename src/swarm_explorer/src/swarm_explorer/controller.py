@@ -78,6 +78,7 @@ class TurtlebotController(object):
         self.alignment_vel = np.zeros(2)  # (x_dot, y_dot)
         self.wall_vel = np.zeros(2)  # (x_dot, y_dot)
         self.obstacle_vel = np.zeros(2)  # (x_dot, y_dot)
+        self.robot_collision_vel = np.zeros(2)  # (x_dot, y_dot)
         self.frontier_vel = np.zeros(2)  # (x_dot, y_dot)
 
         # Stored values for PID controller
@@ -93,6 +94,11 @@ class TurtlebotController(object):
         self.env_config = env_config
         self.emergency_turn = 0.0
         self.frontier_weight_scale = 1.0
+        # Dedicated inter-robot collision avoidance (separate from map obstacles).
+        self.robot_collision_weight = float(rospy.get_param("/robot_collision_weight", 1.2))
+        self.robot_collision_radius_scale = float(
+            rospy.get_param("/robot_collision_radius_scale", 1.0)
+        )
         
         # Initialize plotting variables
         self.actual_positions = []
@@ -185,6 +191,25 @@ class TurtlebotController(object):
             self.obstacle_vel = np.zeros(2)
             obstacle_weight_local = 0.0
 
+        # Inter-robot short-range repulsion to avoid collisions on similar targets.
+        self.robot_collision_vel = np.zeros(2)
+        if len(neighbor_states) > 0:
+            robot_collision_radius = max(
+                0.1, self.collision_radius * self.robot_collision_radius_scale
+            )
+            repulsion = np.zeros(2)
+            for state in neighbor_states.values():
+                nbr = self._neighbor_xy_map(state)
+                away = self.state[:2] - nbr
+                dist = np.linalg.norm(away)
+                if dist <= 1e-6 or dist >= robot_collision_radius:
+                    continue
+                # Strongly increase repulsion at very close range.
+                repulsion += (away / dist) / max(dist * dist, 0.05)
+            repulsion_norm = np.linalg.norm(repulsion)
+            if repulsion_norm > 0:
+                self.robot_collision_vel = repulsion / repulsion_norm
+
         # Flock Velocity Calculation if neighbors
         if len(neighbor_states) == 0:
             # rospy.logwarn("Robot %d: no neighbors found", self.tb_id)
@@ -229,6 +254,7 @@ class TurtlebotController(object):
             + separation_weight_local * self.separation_vel
             + wall_weight_local * self.wall_vel
             + obstacle_weight_local * self.obstacle_vel
+            + self.robot_collision_weight * self.robot_collision_vel
         )  # (x_dot, y_dot)
 
         # Emergency behavior: when very close to an obstacle, prioritize turning away.

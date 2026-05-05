@@ -17,8 +17,19 @@ separation_weight: 0.20
 wall_weight: 0.8
 frontier_weight: 0.14
 obstacle_weight: 2.2
+# Inter-robot collision avoidance (for bots converging to same frontier):
+# - Increase `robot_collision_weight` to push bots apart harder.
+# - Increase `robot_collision_radius_scale` to start repulsion earlier.
+robot_collision_weight: 1.35
+robot_collision_radius_scale: 1.2
 frontier_dist_weight: 0.001
 frontier_size_weight: 1.0
+# Frontier selection tuning (global defaults; can override per robot with private params):
+# - Increase `frontier_size_bonus_scale_m` to favor larger frontier regions
+#   (more group-like behavior).
+# - Decrease it to favor nearest frontier edges (more spread-out coverage).
+frontier_min_region_size: 5
+frontier_size_bonus_scale_m: 0.35
 # define initial poses for each robot
 initial_poses:
   - { x: 0.0, y: 0.0, theta: 0.0 } # robot 1

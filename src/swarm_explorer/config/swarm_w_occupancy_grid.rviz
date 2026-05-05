@@ -416,6 +416,30 @@ Visualization Manager:
         {}
       Queue Size: 5
       Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /robot_1/vis/frontier_target
+      Name: FrontierTarget1
+      Namespaces:
+        {}
+      Queue Size: 5
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /robot_2/vis/frontier_target
+      Name: FrontierTarget2
+      Namespaces:
+        {}
+      Queue Size: 5
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /robot_3/vis/frontier_target
+      Name: FrontierTarget3
+      Namespaces:
+        {}
+      Queue Size: 5
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

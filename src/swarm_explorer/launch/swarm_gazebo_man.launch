@@ -27,9 +27,9 @@
   <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom_1" 
         args="0 0 0 0 0 0 map robot_1/odom"/>
   <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom_2" 
-        args="2 0 0 0 0 0 map robot_2/odom"/>
+        args="0 0 0 0 0 0 map robot_2/odom"/>
   <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom_3" 
-        args="4 0 0 0 0 0 map robot_3/odom"/>
+        args="0 0 0 0 0 0 map robot_3/odom"/>
 
   <!--  4) Spawn TurtleBot3 #1  -->
   <group ns="robot_1">

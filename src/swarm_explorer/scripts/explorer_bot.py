@@ -8,6 +8,7 @@ import tf_conversions
 import signal
 import sys
 from collections import deque
+from visualization_msgs.msg import Marker
 
 from mapping.occupancy_grid_2d import OccupancyGrid2d
 from nav_msgs.msg import OccupancyGrid
@@ -23,6 +24,9 @@ class ExplorerBot:
     """
     Class for the ExplorerBot that handles communication and state updates.
     """
+    MODE_SEARCH = "SEARCH"
+    MODE_FRONTIER = "FRONTIER"
+    MODE_ESCAPE = "ESCAPE"
 
     def __init__(self):
         """
@@ -56,6 +60,10 @@ class ExplorerBot:
             self.state_pub_topic, ExplorerStateMsg, queue_size=1
         )
         self.pub_map = rospy.Publisher(self.map_pub_topic, ExplorerMapMsg, queue_size=1)
+        self.frontier_marker_topic = f"/robot_{self.bot_id}/vis/frontier_target"
+        self.pub_frontier_marker = rospy.Publisher(
+            self.frontier_marker_topic, Marker, queue_size=1
+        )
         # subscribe to other robots' states and maps
         rospy.Subscriber(self.state_topic, ExplorerStateMsg, self._state_callback)
         rospy.Subscriber(self.map_topic, ExplorerMapMsg, self._map_callback)
@@ -67,21 +75,36 @@ class ExplorerBot:
         self._held_frontier_target = None
         self._held_frontier_until = rospy.Time(0)
         self._pose_history = deque()
-        self._recovery_until = rospy.Time(0)
-        self._recovery_turn_sign = 1.0 if (self.bot_id % 2 == 0) else -1.0
+        self._escape_until = rospy.Time(0)
+        self._escape_turn_sign = 1.0 if (self.bot_id % 2 == 0) else -1.0
         self.stuck_window_sec = rospy.get_param("~stuck_window_sec", 12.0)
         self.stuck_min_progress_m = rospy.get_param("~stuck_min_progress_m", 0.10)
-        self.recovery_duration_sec = rospy.get_param("~recovery_duration_sec", 1.2)
-        self.recovery_cooldown_sec = rospy.get_param("~recovery_cooldown_sec", 6.0)
-        self.recovery_linear_x = rospy.get_param("~recovery_linear_x", 0.08)
-        self.recovery_angular_z = rospy.get_param("~recovery_angular_z", 0.9)
-        self._recovery_cooldown_until = rospy.Time(0)
-        self._in_recovery = False
+        self.escape_duration_sec = rospy.get_param("~escape_duration_sec", 1.4)
+        self.escape_cooldown_sec = rospy.get_param("~escape_cooldown_sec", 6.0)
+        self.escape_reverse_x = rospy.get_param("~escape_reverse_x", -0.06)
+        self.escape_turn_z = rospy.get_param("~escape_turn_z", 0.9)
+        self.escape_trigger_obstacle_dist = rospy.get_param(
+            "~escape_trigger_obstacle_dist", 0.35
+        )
+        self.escape_repeat_window_sec = rospy.get_param("~escape_repeat_window_sec", 25.0)
+        self.escape_repeat_radius_m = rospy.get_param("~escape_repeat_radius_m", 0.9)
+        self.escape_retarget_pause_sec = rospy.get_param("~escape_retarget_pause_sec", 2.5)
+        self._escape_cooldown_until = rospy.Time(0)
+        self._escape_history = deque()
+        self._escape_cmd_linear_x = self.escape_reverse_x
+        self._escape_cmd_angular_z = self.escape_turn_z
+        self._frontier_pause_until = rospy.Time(0)
+        self._mode = self.MODE_SEARCH
+        self.log_frontier_counts = rospy.get_param("~log_frontier_counts", False)
         self._last_merge_time = rospy.Time(0)
         self.map_publish_hz = rospy.get_param("~map_publish_hz", 1.0)
         if self.map_publish_hz <= 0.0:
             self.map_publish_hz = 1.0
         self._last_map_pub_time = rospy.Time(0)
+        self.map_fusion_gain = rospy.get_param("~map_fusion_gain", 0.20)
+        self.map_fusion_confidence_min = rospy.get_param(
+            "~map_fusion_confidence_min", 0.15
+        )
 
         # TODO: fill in these with the correct classes/parameters
         self.frontier_updater = FrontierUpdater(
@@ -194,16 +217,14 @@ class ExplorerBot:
 
         width = msg.grid.info.width
         height = msg.grid.info.height
-        if width != self.latest_map._x_num or height != self.latest_map._y_num:
+        if width <= 0 or height <= 0:
+            return
+        if len(msg.grid.data) != (width * height):
             rospy.logwarn_throttle(
                 2.0,
-                "Robot %d: map merge skip from robot %d (shape %dx%d != %dx%d).",
+                "Robot %d: map merge skip from robot %d (bad data length).",
                 self.bot_id,
                 msg.robot_id,
-                width,
-                height,
-                self.latest_map._x_num,
-                self.latest_map._y_num,
             )
             return
 
@@ -227,13 +248,101 @@ class ExplorerBot:
         )
 
         probs = np.clip(data[known_mask].astype(np.float64) / 100.0, 0.01, 0.99)
-        incoming_log_odds = np.log(probs / (1.0 - probs))
-        fusion_gain = 0.25
+        # Confidence is low near p=0.5 (uncertain) and high near 0/1.
+        confidence = 2.0 * np.abs(probs - 0.5)  # [0, 1]
+        confidence_mask = confidence >= self.map_fusion_confidence_min
+        if not np.any(confidence_mask):
+            rospy.loginfo_throttle(
+                2.0,
+                "Robot %d: map msg from robot_%d below fusion confidence threshold.",
+                self.bot_id,
+                msg.robot_id,
+            )
+            return
+        incoming_log_odds = np.log(probs[confidence_mask] / (1.0 - probs[confidence_mask]))
+        scaled_gain = self.map_fusion_gain * confidence[confidence_mask]
+
+        known_indices = np.argwhere(known_mask)
+        confident_indices = known_indices[confidence_mask]
+
+        in_res = float(msg.grid.info.resolution)
+        if in_res <= 0.0:
+            rospy.logwarn_throttle(
+                2.0,
+                "Robot %d: map merge skip from robot %d (non-positive resolution).",
+                self.bot_id,
+                msg.robot_id,
+            )
+            return
+        in_origin_x = float(msg.grid.info.origin.position.x)
+        in_origin_y = float(msg.grid.info.origin.position.y)
+        in_frame = msg.grid.header.frame_id if msg.grid.header.frame_id else "map"
+        local_frame = self.latest_map._fixed_frame
+
+        # Convert incoming confident cells to world/map-frame coordinates.
+        in_x = in_origin_x + (confident_indices[:, 0].astype(np.float64) + 0.5) * in_res
+        in_y = in_origin_y + (confident_indices[:, 1].astype(np.float64) + 0.5) * in_res
+
+        if in_frame != local_frame:
+            try:
+                tf_msg = self.tfBuffer.lookup_transform(
+                    local_frame,
+                    in_frame,
+                    rospy.Time(0),
+                    rospy.Duration(0.2),
+                )
+            except Exception:
+                rospy.logwarn_throttle(
+                    2.0,
+                    "Robot %d: map merge skip from robot %d (no TF %s -> %s).",
+                    self.bot_id,
+                    msg.robot_id,
+                    in_frame,
+                    local_frame,
+                )
+                return
+
+            tx = tf_msg.transform.translation.x
+            ty = tf_msg.transform.translation.y
+            q = tf_msg.transform.rotation
+            (_, _, yaw) = tf_conversions.transformations.euler_from_quaternion(
+                [q.x, q.y, q.z, q.w]
+            )
+            c = np.cos(yaw)
+            s = np.sin(yaw)
+            x_local = c * in_x - s * in_y + tx
+            y_local = s * in_x + c * in_y + ty
+        else:
+            x_local = in_x
+            y_local = in_y
+
+        # Project into local map indices.
+        ii = np.floor((x_local - self.latest_map._x_min) / self.latest_map._x_res).astype(np.int32)
+        jj = np.floor((y_local - self.latest_map._y_min) / self.latest_map._y_res).astype(np.int32)
+        valid = (
+            (ii >= 0)
+            & (ii < self.latest_map._x_num)
+            & (jj >= 0)
+            & (jj < self.latest_map._y_num)
+        )
+        if not np.any(valid):
+            rospy.loginfo_throttle(
+                2.0,
+                "Robot %d: map msg from robot_%d had no overlapping confident cells.",
+                self.bot_id,
+                msg.robot_id,
+            )
+            return
+
+        ii = ii[valid]
+        jj = jj[valid]
+        delta = scaled_gain[valid] * incoming_log_odds[valid]
         # Keep merged values slightly outside unknown bounds so frontier/known
         # checks classify them as known instead of "exactly threshold == unknown".
         eps = 1e-3
-        local_map[known_mask] = np.clip(
-            local_map[known_mask] + fusion_gain * incoming_log_odds,
+        np.add.at(local_map, (ii, jj), delta)
+        local_map[:, :] = np.clip(
+            local_map,
             self.latest_map._free_threshold - eps,
             self.latest_map._occupied_threshold + eps,
         )
@@ -256,31 +365,82 @@ class ExplorerBot:
             known_gain,
         )
 
-    def _update_stuck_state(self, map_pose, has_frontier):
+    def _start_escape(self, reason, map_pose):
+        now = rospy.Time.now()
+        self._escape_history.append((now, map_pose[0], map_pose[1]))
+        history_cutoff = now - rospy.Duration(self.escape_repeat_window_sec)
+        while self._escape_history and self._escape_history[0][0] < history_cutoff:
+            self._escape_history.popleft()
+
+        nearby_repeat_count = 0
+        for (_, hx, hy) in self._escape_history:
+            if np.hypot(map_pose[0] - hx, map_pose[1] - hy) <= self.escape_repeat_radius_m:
+                nearby_repeat_count += 1
+
+        repeat_scale = min(1.0 + 0.35 * max(nearby_repeat_count - 1, 0), 2.0)
+        self._escape_cmd_linear_x = self.escape_reverse_x * repeat_scale
+        self._escape_cmd_angular_z = self.escape_turn_z * repeat_scale
+        self._escape_until = now + rospy.Duration(self.escape_duration_sec * repeat_scale)
+        self._escape_cooldown_until = now + rospy.Duration(self.escape_cooldown_sec)
+        self._escape_turn_sign *= -1.0
+        self._set_mode(self.MODE_ESCAPE, reason)
+        self._held_frontier_target = None
+        self._held_frontier_until = rospy.Time(0)
+        self._frontier_pause_until = now + rospy.Duration(self.escape_retarget_pause_sec)
+        self._pose_history.clear()
+        
+    def _set_mode(self, new_mode, reason):
+        if self._mode == new_mode:
+            return
+        rospy.logwarn("Robot %d: mode %s -> %s (%s)", self.bot_id, self._mode, new_mode, reason)
+        self._mode = new_mode
+
+    def _nearest_obstacle_distance(self, map_pose):
+        obstacles = self.latest_map.get_surrounding_obstacles(
+            np.array([map_pose[0], map_pose[1]]),
+            radius=max(self.collision_radius, 1.0),
+            is_point=True,
+        )
+        if not obstacles:
+            return float("inf")
+        return float(obstacles[0][1])
+
+    def _update_stuck_state(self, map_pose):
+        """
+        Trigger escape when nearly stationary next to mapped obstacles.
+        Must run even without an active frontier (e.g. wedged in a corner with
+        no frontier target); previously we gated on has_frontier and robot_3
+        could sit forever without escape logs.
+        """
         now = rospy.Time.now()
         self._pose_history.append((now, map_pose[0], map_pose[1]))
         window_start = now - rospy.Duration(self.stuck_window_sec)
         while self._pose_history and self._pose_history[0][0] < window_start:
             self._pose_history.popleft()
 
-        if not has_frontier or len(self._pose_history) < 2:
+        if len(self._pose_history) < 2:
             return
 
         first = self._pose_history[0]
         last = self._pose_history[-1]
         progress = float(np.hypot(last[1] - first[1], last[2] - first[2]))
-        if progress < self.stuck_min_progress_m and now >= self._recovery_until:
-            if now < self._recovery_cooldown_until:
+        nearest_obstacle_dist = self._nearest_obstacle_distance(map_pose)
+        near_obstacle = nearest_obstacle_dist <= self.escape_trigger_obstacle_dist
+        if progress < self.stuck_min_progress_m and near_obstacle:
+            if now < self._escape_cooldown_until or now < self._escape_until:
+                rospy.loginfo_throttle(
+                    3.0,
+                    "Robot %d: stuck-like (progress=%.2fm, obstacle=%.2fm) but escape "
+                    "cooldown/timer active.",
+                    self.bot_id,
+                    progress,
+                    nearest_obstacle_dist,
+                )
                 return
-            self._recovery_until = now + rospy.Duration(self.recovery_duration_sec)
-            self._recovery_cooldown_until = now + rospy.Duration(self.recovery_cooldown_sec)
-            self._recovery_turn_sign *= -1.0
-            self._pose_history.clear()
-            rospy.logwarn(
-                "Robot %d: low progress %.2fm in %.1fs, triggering recovery.",
-                self.bot_id,
-                progress,
-                self.stuck_window_sec,
+            self._start_escape(
+                "low progress %.2fm in %.1fs near obstacle (%.2fm)"
+                % (progress, self.stuck_window_sec, nearest_obstacle_dist),
+                map_pose,
             )
 
     def _state_callback(self, msg):
@@ -373,6 +533,33 @@ class ExplorerBot:
         self.controller.plot_results()
         rospy.signal_shutdown("User requested shutdown")
 
+    def _publish_frontier_target_marker(self, frontier_target):
+        marker = Marker()
+        marker.header.stamp = rospy.Time.now()
+        marker.header.frame_id = "map"
+        marker.ns = "frontier_target"
+        marker.id = int(self.bot_id)
+        marker.pose.orientation.w = 1.0
+
+        if frontier_target is None:
+            marker.action = Marker.DELETE
+            self.pub_frontier_marker.publish(marker)
+            return
+
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.pose.position.x = float(frontier_target[0])
+        marker.pose.position.y = float(frontier_target[1])
+        marker.pose.position.z = 0.06
+        marker.scale.x = 0.35
+        marker.scale.y = 0.35
+        marker.scale.z = 0.12
+        marker.color.r = 1.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+        marker.color.a = 0.95
+        self.pub_frontier_marker.publish(marker)
+
     def run(self):
         rate = rospy.Rate(10)  # 10 Hz control loop
         
@@ -406,7 +593,9 @@ class ExplorerBot:
             best_frontier = self.frontier_updater.get_best_frontier(
                 np.array([map_pose[0], map_pose[1]])
             )
-            candidate_target = self.frontier_updater.frontier_to_world_point(best_frontier)
+            candidate_target = self.frontier_updater.frontier_to_world_point(
+                best_frontier, reference_world_point=(map_pose[0], map_pose[1])
+            )
             now = rospy.Time.now()
 
             # Frontier persistence: hold a selected target briefly to avoid
@@ -422,8 +611,18 @@ class ExplorerBot:
                 self._held_frontier_target = candidate_target
                 self._held_frontier_until = now + rospy.Duration(self.frontier_hold_seconds)
 
-            frontier_target = self._held_frontier_target
-            self._update_stuck_state(map_pose, frontier_target is not None)
+            if now < self._frontier_pause_until:
+                frontier_target = None
+            else:
+                frontier_target = self._held_frontier_target
+            # Keep marker visible for debugging even during temporary retarget pause.
+            marker_target = (
+                self._held_frontier_target
+                if self._held_frontier_target is not None
+                else frontier_target
+            )
+            self._publish_frontier_target_marker(marker_target)
+            self._update_stuck_state(map_pose)
             neighbor_count = len(
                 {
                     k: v
@@ -441,13 +640,29 @@ class ExplorerBot:
                         neighbor_count,
                         since_last_merge if self._last_merge_time != rospy.Time(0) else -1.0,
                     )
-            rospy.loginfo_throttle(
-                2.0,
-                "Robot %d: frontiers=%d",
-                self.bot_id,
-                len(self.frontier_updater.frontiers),
-            )
+            if self.log_frontier_counts:
+                rospy.loginfo_throttle(
+                    2.0,
+                    "Robot %d: frontiers=%d",
+                    self.bot_id,
+                    len(self.frontier_updater.frontiers),
+                )
+            now = rospy.Time.now()
+            if now < self._escape_until:
+                self._set_mode(self.MODE_ESCAPE, "escape timer active")
+                escape_cmd = Twist()
+                escape_cmd.linear.x = self._escape_cmd_linear_x
+                escape_cmd.angular.z = self._escape_turn_sign * self._escape_cmd_angular_z
+                self.controller.cmd(escape_cmd)
+                rospy.loginfo_throttle(1.0, "Robot %d: ESCAPE mode active.", self.bot_id)
+                rate.sleep()
+                continue
+            elif self._mode == self.MODE_ESCAPE:
+                self._set_mode(self.MODE_FRONTIER, "escape complete")
+
             if frontier_target is None:
+                self._set_mode(self.MODE_SEARCH, "no frontier target")
+                self._publish_frontier_target_marker(None)
                 # Still publish state so relay can track this robot.
                 state_msg = ExplorerStateMsg()
                 state_msg.robot_id = self.bot_id
@@ -467,20 +682,7 @@ class ExplorerBot:
                 rate.sleep()
                 continue
 
-            now = rospy.Time.now()
-            if now < self._recovery_until:
-                recovery_cmd = Twist()
-                recovery_cmd.linear.x = self.recovery_linear_x
-                recovery_cmd.angular.z = self._recovery_turn_sign * self.recovery_angular_z
-                self.controller.cmd(recovery_cmd)
-                if not self._in_recovery:
-                    self._in_recovery = True
-                    rospy.loginfo("Robot %d: recovery maneuver active.", self.bot_id)
-                rate.sleep()
-                continue
-            elif self._in_recovery:
-                self._in_recovery = False
-                rospy.loginfo("Robot %d: recovery maneuver complete.", self.bot_id)
+            self._set_mode(self.MODE_FRONTIER, "frontier target selected")
 
             # Call to the controller
             true_neighbor_states = {

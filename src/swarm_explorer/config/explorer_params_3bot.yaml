@@ -1,0 +1,45 @@
+---
+# explorer_bot behaviour parameters — tuned for 3 robots in world_4_small
+# Loaded by explorer_bot.launch and available as private ROS params (~param_name).
+
+# ── Stuck / escape detection ───────────────────────────────────────────────────
+# A robot is considered stuck when it has moved less than stuck_min_progress_m
+# within the last stuck_window_sec seconds AND is close to a mapped obstacle
+# (or is in FRONTIER mode while essentially stationary).
+stuck_window_sec:      6.0    # seconds of history used to measure progress
+stuck_min_progress_m:  0.10   # meters — less than this → stuck
+
+# Distance to nearest mapped obstacle that triggers escape (meters).
+# Set higher than the physical wall-contact distance to catch force-balance
+# stalls where frontier attraction and wall repulsion cancel out.
+escape_trigger_obstacle_dist: 0.45
+
+# ── Escape maneuver ────────────────────────────────────────────────────────────
+# The robot reverses and turns for escape_duration_sec, then resumes frontier.
+# Repeated escapes near the same location scale up the maneuver (adaptive).
+escape_reverse_x:    -0.13   # m/s (negative = reverse)
+escape_turn_z:        1.1    # rad/s
+escape_duration_sec:  2.0    # seconds of maneuver per escape
+escape_cooldown_sec:  6.0    # minimum gap between escape sequences
+
+# Adaptive scaling window: if N escapes happen within escape_repeat_window_sec
+# and within escape_repeat_radius_m of each other, scale maneuver by up to 2x.
+escape_repeat_window_sec: 25.0
+escape_repeat_radius_m:    0.9
+
+# ── Post-escape re-targeting pause ─────────────────────────────────────────────
+# After an escape, frontier selection is paused for this many seconds (base).
+# Scaled up by the same repeat_scale factor as the maneuver so that repeated
+# escapes near the same wall give progressively longer drift time before the
+# robot can re-commit to the same corridor frontier.
+escape_retarget_pause_sec: 4.0
+
+# ── Frontier commitment ────────────────────────────────────────────────────────
+# Once a frontier target is chosen it is held for frontier_hold_seconds before
+# being eligible for re-evaluation.  Longer = less thrashing / more corridor persistence.
+frontier_hold_seconds:   6.0
+frontier_reached_radius: 0.5  # meters — target is "reached" within this radius
+
+# ── Visualization ──────────────────────────────────────────────────────────────
+vis/max_points:  600    # max marker points published per map update
+vis/show_unknown: false # render unknown cells in the explorer vis marker

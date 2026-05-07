@@ -1,0 +1,39 @@
+---
+# Swarm-level parameters — tuned for 3 robots in world_4_small
+# These control inter-robot communication, flocking, and obstacle avoidance.
+
+# ── Communication ──────────────────────────────────────────────────────────────
+comm_radius: 5.0        # meters — map/state messages relayed within this range
+publish_rate: 5.0       # Hz — how often explorer_bot publishes its state
+max_neighbor_age: 2     # seconds — discard stale neighbor state entries
+
+# ── Flocking radii ─────────────────────────────────────────────────────────────
+cohesion_radius:   1.5  # pull toward neighbors within this range
+separation_radius: 0.65 # push away from neighbors closer than this
+alignment_radius:  1.5  # match heading of neighbors within this range
+collision_radius:  1.7  # obstacle avoidance look-ahead radius (meters)
+
+# ── Flocking / navigation weights ──────────────────────────────────────────────
+alignment_weight:  0.15
+cohesion_weight:   0.10  # mild attraction; 3 bots cluster enough naturally
+separation_weight: 0.20
+wall_weight:       1.3   # repulsion from the outer map boundary
+frontier_weight:   0.14  # attraction toward the selected frontier target
+obstacle_weight:   3.2   # repulsion from mapped occupied cells
+
+# ── Inter-robot collision avoidance ────────────────────────────────────────────
+# Applied in addition to obstacle_weight so bots don't physically collide.
+robot_collision_weight:       1.35
+robot_collision_radius_scale: 1.2
+
+# ── Frontier scoring ───────────────────────────────────────────────────────────
+frontier_dist_weight:      0.001  # cost multiplier on distance to frontier
+frontier_size_weight:      1.0    # multiplier on log1p(size) size bonus
+frontier_min_region_size:  5      # ignore frontier regions smaller than N cells
+frontier_size_bonus_scale_m: 0.35 # size bonus saturation scale (meters)
+
+# ── Initial spawn poses (must match launch file -x -y args) ────────────────────
+initial_poses:
+  - { x:  0.0, y:  0.0, theta: 0.0 } # robot 1
+  - { x:  2.0, y:  0.0, theta: 0.0 } # robot 2
+  - { x:  4.0, y:  0.0, theta: 0.0 } # robot 3

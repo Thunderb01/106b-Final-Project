@@ -1,0 +1,38 @@
+---
+# explorer_bot behaviour parameters — tuned for 5 robots in world_4_small
+# [5BOT] differences vs explorer_params_3bot.yaml are annotated.
+
+# ── Stuck / escape detection ───────────────────────────────────────────────────
+stuck_window_sec:      6.0
+stuck_min_progress_m:  0.10
+
+# [5BOT] Slightly larger: with 5 bots the map fills faster, so obstacles are
+# registered sooner; we can afford a tighter trigger.
+escape_trigger_obstacle_dist: 0.42
+
+# ── Escape maneuver ────────────────────────────────────────────────────────────
+escape_reverse_x:    -0.13
+escape_turn_z:        1.1
+escape_duration_sec:  2.0
+escape_cooldown_sec:  5.0    # [5BOT] Shorter: faster map fill means quicker re-assessment
+
+escape_repeat_window_sec: 25.0
+escape_repeat_radius_m:    0.9
+
+# ── Post-escape re-targeting pause ─────────────────────────────────────────────
+# [5BOT] Slightly shorter base pause — with 5 bots there are more alternative
+# frontiers available, so the robot can re-target faster without risking the
+# same corridor stall.
+escape_retarget_pause_sec: 3.0
+
+# ── Frontier commitment ────────────────────────────────────────────────────────
+# [5BOT] Shorter hold — with 5 bots, frontiers get claimed/explored faster so
+# stale targets should be dropped sooner to avoid multiple bots converging on
+# a frontier that has already been explored by a teammate.
+frontier_hold_seconds:   4.0
+frontier_reached_radius: 0.5
+
+# ── Visualization ──────────────────────────────────────────────────────────────
+# [5BOT] Fewer vis points to reduce RViz load with 5 simultaneous map publishers.
+vis/max_points:  400
+vis/show_unknown: false

@@ -235,7 +235,10 @@ class OccupancyGrid2d(object):
    
             # All of these voxels are measured free (only last one is measured occupied)
            
-            step_size = -np.sqrt(self._x_res**2 + self._y_res**2)
+            # Use half the smallest cell dimension so no cell is ever skipped
+            # regardless of ray angle (diagonal step was too coarse and let rays
+            # jump through the interior of thick solid obstacles).
+            step_size = -(min(self._x_res, self._y_res) / 2.0)
             voxels = []
             for r_block in np.arange(r, 0, step_size):
                 x = sensor_x + r_block * np.cos(angle_fixed)
@@ -267,8 +270,18 @@ class OccupancyGrid2d(object):
                     # For max-range/no-hit rays, treat endpoint as free too.
                     if hit_obstacle and voxel == voxel_final:
                         continue
-                    else:
-                        self._map[voxel] = max(self._map[voxel] + self._free_update, self._free_threshold)
+                    # Protect cells that are at or near the occupied ceiling from
+                    # grazing-angle free-ray erosion.  The threshold is set at 90 % of
+                    # occupied_threshold (≈ 2 confirmed hits with the current update
+                    # probability), so:
+                    #   • Transient single-hit detections (e.g. another robot's body
+                    #     at ~1.7 log-odds) are NOT protected and will be cleared in
+                    #     ~2 free sweeps once the robot moves away.
+                    #   • Confirmed wall/obstacle cells (≥ 2 hits, near ceiling at
+                    #     ~3.1+ log-odds) are protected from erosion by grazing rays.
+                    if self._map[voxel] >= self._occupied_threshold * 0.9:
+                        continue
+                    self._map[voxel] = max(self._map[voxel] + self._free_update, self._free_threshold)
                 
 
         # Visualize.

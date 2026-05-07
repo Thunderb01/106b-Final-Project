@@ -1,0 +1,42 @@
+---
+# Swarm-level parameters — tuned for 5 robots in world_4_small
+# Differences vs 3-bot config are annotated with [5BOT].
+
+# ── Communication ──────────────────────────────────────────────────────────────
+comm_radius: 7.0        # [5BOT] Larger: more of the world must be covered by map sharing
+publish_rate: 5.0
+max_neighbor_age: 2
+
+# ── Flocking radii ─────────────────────────────────────────────────────────────
+cohesion_radius:   1.5
+separation_radius: 0.65
+alignment_radius:  1.5
+collision_radius:  1.7
+
+# ── Flocking / navigation weights ──────────────────────────────────────────────
+alignment_weight:  0.10  # [5BOT] Slightly lower — 5 aligned bots can crowd corridors
+cohesion_weight:   0.05  # [5BOT] Lower: don't let 5 bots cluster into a ball
+separation_weight: 0.25  # [5BOT] Higher: bots start very close; need more spread
+wall_weight:       1.3
+frontier_weight:   0.14
+obstacle_weight:   3.2
+
+# ── Inter-robot collision avoidance ────────────────────────────────────────────
+# [5BOT] Slightly softer — 5 bots in a small world create a lot of mutual repulsion;
+# keeping it high risks deadlock when they all try to push past each other.
+robot_collision_weight:       1.0
+robot_collision_radius_scale: 1.0
+
+# ── Frontier scoring ───────────────────────────────────────────────────────────
+frontier_dist_weight:      0.001
+frontier_size_weight:      1.0
+frontier_min_region_size:  8      # [5BOT] Larger: prevents all 5 bots targeting same tiny region
+frontier_size_bonus_scale_m: 0.35
+
+# ── Initial spawn poses (must match launch file -x -y args) ────────────────────
+initial_poses:
+  - { x:  0.0, y:  0.0, theta: 0.0 } # robot 1
+  - { x:  2.0, y:  0.0, theta: 0.0 } # robot 2
+  - { x:  4.0, y:  0.0, theta: 0.0 } # robot 3
+  - { x: -2.0, y:  0.0, theta: 0.0 } # robot 4
+  - { x: -1.0, y:  2.0, theta: 0.0 } # robot 5

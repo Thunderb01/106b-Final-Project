@@ -1,0 +1,38 @@
+---
+# Occupancy-grid mapping parameters — tuned for 3 robots
+# Used by both the standalone mapping_node and each explorer_bot's local grid.
+
+frames:
+  fixed:  map
+  sensor: base_link   # overridden per-robot in launch
+
+topics:
+  vis:    /scan_map   # overridden per-robot in launch
+  sensor: /scan       # overridden per-robot in launch
+
+# ── Grid dimensions ────────────────────────────────────────────────────────────
+x:
+  num: 50             # cells along X  → 0.40 m/cell for a 20 m range
+  min: -10.0          # meters
+  max:  10.0
+
+y:
+  num: 50
+  min: -10.0
+  max:  10.0
+
+# ── Bayesian update probabilities ──────────────────────────────────────────────
+# occupied_update = P(cell occupied | hit).  Higher → fewer hits needed to claim.
+# occupied_threshold = P threshold to classify cell as occupied.
+# A cell with confirmed occupied evidence (log-odds ≥ occupied_update) is protected
+# from free-ray erosion (see occupancy_grid_2d.py sensor_callback).
+update:
+  occupied:           0.85   # needs 2 hits to reach threshold
+  occupied_threshold: 0.97   # ~4 free sweeps needed to undo from threshold
+  free:               0.30
+  free_threshold:     0.03
+
+# ── Ray downsampling ───────────────────────────────────────────────────────────
+# Fraction of lidar rays processed each scan.  Higher → better obstacle coverage
+# at the cost of CPU.  0.25 is a good balance for a 3-bot run.
+random_downsample: 0.25

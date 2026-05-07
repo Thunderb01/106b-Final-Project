@@ -18,7 +18,7 @@ y:
   max: 10.0
 
 update:
-  occupied:           0.7
+  occupied:           0.85
   occupied_threshold: 0.97
   free:               0.3
   free_threshold:     0.03

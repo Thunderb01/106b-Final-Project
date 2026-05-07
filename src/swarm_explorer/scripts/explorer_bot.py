@@ -368,7 +368,9 @@ class ExplorerBot:
     def _start_escape(self, reason, map_pose):
         now = rospy.Time.now()
         self._escape_history.append((now, map_pose[0], map_pose[1]))
-        history_cutoff = now - rospy.Duration(self.escape_repeat_window_sec)
+        # Clamp so we never compute a negative ROS time (can happen at early startup).
+        raw_cutoff_sec = now.to_sec() - self.escape_repeat_window_sec
+        history_cutoff = rospy.Time(max(raw_cutoff_sec, 0.0))
         while self._escape_history and self._escape_history[0][0] < history_cutoff:
             self._escape_history.popleft()
 
@@ -386,7 +388,12 @@ class ExplorerBot:
         self._set_mode(self.MODE_ESCAPE, reason)
         self._held_frontier_target = None
         self._held_frontier_until = rospy.Time(0)
-        self._frontier_pause_until = now + rospy.Duration(self.escape_retarget_pause_sec)
+        # Scale the re-target pause with repeat_scale so repeated nearby escapes
+        # give the bot progressively longer drift time before it can re-commit to
+        # the same corridor/wall frontier (breaks force-equilibrium stalls).
+        self._frontier_pause_until = now + rospy.Duration(
+            self.escape_retarget_pause_sec * repeat_scale
+        )
         self._pose_history.clear()
         
     def _set_mode(self, new_mode, reason):
@@ -413,8 +420,13 @@ class ExplorerBot:
         could sit forever without escape logs.
         """
         now = rospy.Time.now()
+        if now == rospy.Time(0):
+            return
         self._pose_history.append((now, map_pose[0], map_pose[1]))
-        window_start = now - rospy.Duration(self.stuck_window_sec)
+        if now.to_sec() < self.stuck_window_sec:
+            window_start = rospy.Time(0)
+        else:
+            window_start = now - rospy.Duration(self.stuck_window_sec)
         while self._pose_history and self._pose_history[0][0] < window_start:
             self._pose_history.popleft()
 
@@ -423,10 +435,25 @@ class ExplorerBot:
 
         first = self._pose_history[0]
         last = self._pose_history[-1]
+        # Don't evaluate stuck-ness until the history actually spans the full
+        # window.  At startup, a bot that just entered FRONTIER mode will have
+        # near-zero progress by definition — that's not a stall.
+        history_span = (last[0] - first[0]).to_sec()
+        if history_span < self.stuck_window_sec * 0.9:
+            return
+
         progress = float(np.hypot(last[1] - first[1], last[2] - first[2]))
         nearest_obstacle_dist = self._nearest_obstacle_distance(map_pose)
         near_obstacle = nearest_obstacle_dist <= self.escape_trigger_obstacle_dist
-        if progress < self.stuck_min_progress_m and near_obstacle:
+        # Fallback: if in FRONTIER mode and essentially stationary (< half the
+        # progress threshold), escape even if the map doesn't show a nearby obstacle.
+        # This catches force-balance stalls where eroded/unmapped cells prevent
+        # get_surrounding_obstacles from detecting the blocking surface.
+        frozen_in_frontier = (
+            self._mode == self.MODE_FRONTIER
+            and progress < self.stuck_min_progress_m * 0.5
+        )
+        if progress < self.stuck_min_progress_m and (near_obstacle or frozen_in_frontier):
             if now < self._escape_cooldown_until or now < self._escape_until:
                 rospy.loginfo_throttle(
                     3.0,

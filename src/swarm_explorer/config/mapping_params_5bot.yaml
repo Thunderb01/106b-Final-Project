@@ -1,0 +1,36 @@
+---
+# Occupancy-grid mapping parameters — tuned for 5 robots
+# [5BOT] differences vs mapping_params_3bot.yaml are annotated.
+
+frames:
+  fixed:  map
+  sensor: base_link
+
+topics:
+  vis:    /scan_map
+  sensor: /scan
+
+# ── Grid dimensions ────────────────────────────────────────────────────────────
+x:
+  num: 50
+  min: -10.0
+  max:  10.0
+
+y:
+  num: 50
+  min: -10.0
+  max:  10.0
+
+# ── Bayesian update probabilities ──────────────────────────────────────────────
+update:
+  occupied:           0.85
+  occupied_threshold: 0.97
+  free:               0.30
+  free_threshold:     0.03
+
+# ── Ray downsampling ───────────────────────────────────────────────────────────
+# [5BOT] Reduced from 0.25 to 0.15 to keep CPU load manageable with 5 mapping
+# nodes + 5 explorer_bot nodes all running simultaneously.  The tradeoff is
+# slightly more chance of thin-wall leakage; increase back to 0.25 if your
+# machine can handle it (or if you see interior-of-obstacle frontiers again).
+random_downsample: 0.15
